@@ -1,0 +1,15 @@
+---
+name: Auth signup flow
+stages:
+  - name: signup
+    request:
+      url: http://localhost:8000/auth/signup
+      method: POST
+      json:
+        email: user@example.com
+        password: StrongPass!1
+        name: 보담 사용자
+    response:
+      status_code: 201
+      json:
+        email: user@example.com

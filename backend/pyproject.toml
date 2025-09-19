@@ -1,0 +1,69 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bodam-backend"
+version = "0.1.0"
+description = "BoDam backend service"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "BoDam Team" }]
+dependencies = [
+  "fastapi>=0.110,<0.111",
+  "uvicorn[standard]>=0.29,<0.30",
+  "sqlalchemy>=2.0,<2.1",
+  "alembic>=1.13,<1.14",
+  "psycopg[binary]>=3.1,<3.2",
+  "pydantic>=2.6,<2.8",
+  "pydantic-settings>=2.2,<2.3",
+  "celery>=5.3,<5.4",
+  "redis>=5.0,<5.1",
+  "geoalchemy2>=0.14,<0.15",
+  "pgvector>=0.2.5,<0.3",
+  "asyncpg>=0.29,<0.30",
+  "prometheus-client>=0.20,<0.21",
+  "python-multipart>=0.0.9,<0.1",
+  "httpx>=0.27,<0.28",
+  "tenacity>=8.2,<8.3",
+  "structlog>=23.1,<23.2"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.1,<8.2",
+  "pytest-asyncio>=0.23,<0.24",
+  "pytest-cov>=4.1,<4.2",
+  "httpx>=0.27,<0.28",
+  "ruff>=0.3,<0.4",
+  "black>=24.3,<24.4",
+  "mypy>=1.9,<1.10",
+  "types-redis>=4.6,<4.7"
+]
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "I", "B", "Q", "TID"]
+ignore = ["E203", "E266", "E501"]
+exclude = ["venv", "migrations"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["bodam"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_return_any = true
+plugins = ["pydantic.mypy"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-ra --cov=backend"

@@ -1,0 +1,16 @@
+openapi: 3.0.3
+info:
+  title: Groups API
+  version: 1.0.0
+paths:
+  /groups:
+    get:
+      summary: List groups
+      responses:
+        '200':
+          description: Groups
+    post:
+      summary: Create group
+      responses:
+        '201':
+          description: Created

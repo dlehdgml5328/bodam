@@ -1,0 +1,19 @@
+name: Post Deploy Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment URL'
+        required: true
+
+jobs:
+  smoke-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run smoke checks
+        run: |
+          curl -fsSL "$ENVIRONMENT_URL/healthz"
+          curl -fsSL "$ENVIRONMENT_URL/readyz"
+        env:
+          ENVIRONMENT_URL: ${{ github.event.inputs.environment }}
