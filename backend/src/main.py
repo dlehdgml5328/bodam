@@ -3,8 +3,14 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from .api import auth, donations, files, geo, groups, health, jobs, kakao, live, refunds, stations, webpush
 from .api.admin import refunds as admin_refunds, resources as admin_resources, search as admin_search
 from .api.webhooks import toss
+from .middleware.auth import AuthMiddleware
+from .middleware.rate_limiter import RateLimitMiddleware
 
 app = FastAPI(title="BoDam API")
+
+# Add middleware (order matters - last added runs first)
+app.add_middleware(AuthMiddleware)
+app.add_middleware(RateLimitMiddleware)
 
 app.include_router(auth.router)
 app.include_router(donations.router)

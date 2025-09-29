@@ -6,4 +6,4 @@ RUN apt-get update \
 
 ENV POSTGRES_INITDB_ARGS="--encoding=UTF8"
 
-COPY initdb /docker-entrypoint-initdb.d
+COPY infra/docker/db/initdb /docker-entrypoint-initdb.d

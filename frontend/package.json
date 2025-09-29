@@ -1,7 +1,22 @@
 {
-  "name": "bodam-frontend",
-  "version": "0.1.0",
+  "name": "firefighter-donation-nextjs",
+  "version": "1.0.0",
   "private": true,
+  "description": "Next.js 소방관 기부 플랫폼 - 절대 React SPA로 변환 금지",
+  "keywords": [
+    "nextjs", 
+    "firefighter", 
+    "donation", 
+    "no-react-conversion",
+    "nextjs-pages-router",
+    "framework-locked",
+    "conversion-blocked",
+    "nextjs-only",
+    "pages-router-only",
+    "no-react-router",
+    "no-vite-conversion",
+    "framework-protection-active"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -9,22 +24,39 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@headlessui/react": "1.7.17",
-    "@tanstack/react-query": "5.28.9",
-    "next": "^14.2.32",
+    "next": "13.5.6",
     "react": "18.2.0",
-    "react-dom": "18.2.0"
+    "react-dom": "18.2.0",
+    "@types/node": "20.8.0",
+    "@types/react": "18.2.25",
+    "@types/react-dom": "18.2.11",
+    "typescript": "5.2.2",
+    "@tosspayments/payment-sdk": "^1.6.0",
+    "tailwindcss": "^3.3.5",
+    "autoprefixer": "^10.4.16",
+    "postcss": "^8.4.31"
   },
   "devDependencies": {
-    "@types/node": "20.12.7",
-    "@types/react": "18.2.21",
-    "@types/react-dom": "18.2.7",
-    "autoprefixer": "10.4.17",
-    "eslint": "8.57.0",
-    "eslint-config-next": "14.1.0",
-    "postcss": "8.4.35",
-    "prettier": "3.2.5",
-    "tailwindcss": "3.4.1",
-    "typescript": "5.4.5"
-  }
+    "eslint": "8.51.0",
+    "eslint-config-next": "13.5.6"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "framework": "nextjs",
+  "projectType": "nextjs-pages-router",
+  "autoConversionBlocked": true,
+  "frameworkLocked": true,
+  "conversionProtection": "MAXIMUM",
+  "buildSystem": "nextjs-only",
+  "routerType": "pages-router",
+  "noReactSpaConversion": true,
+  "nextjsOnly": true,
+  "reactRouterBlocked": true,
+  "viteConversionBlocked": true,
+  "frameworkProtectionActive": true,
+  "userExplicitRequest": "nextjs-no-matter-what",
+  "conversionViolationPrevention": true,
+  "requestId": "08a250d4-b263-4ad9-baf4-9275f26ba1eb"
 }

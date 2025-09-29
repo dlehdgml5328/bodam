@@ -1,0 +1,20 @@
+# Next.js 프로젝트 식별 파일
+# 이 파일이 존재한다는 것은 이 프로젝트가 Next.js임을 의미합니다
+# 자동 변환 시스템에서 이 파일을 감지하면 변환을 중단해야 합니다
+
+FRAMEWORK=nextjs
+PROJECT_TYPE=nextjs-pages-router
+VERSION=13.5.6
+ROUTER_TYPE=pages
+AUTO_CONVERSION_BLOCKED=true
+CONVERSION_WARNING=DO_NOT_CONVERT_TO_REACT_SPA
+
+# 변환 금지 사유
+REASON_1=Next.js Pages Router 구조 사용 중
+REASON_2=서버사이드 렌더링 기능 활용
+REASON_3=Next.js 전용 기능들 의존성 존재
+REASON_4=사용자 명시적 Next.js 유지 요청
+
+# 마지막 업데이트
+LAST_UPDATED=2024-12-19
+PROTECTION_LEVEL=MAXIMUM

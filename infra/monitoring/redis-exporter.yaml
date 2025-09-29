@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-exporter
+  namespace: monitoring
+  labels:
+    app: redis-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-exporter
+  template:
+    metadata:
+      labels:
+        app: redis-exporter
+    spec:
+      containers:
+      - name: redis-exporter
+        image: oliver006/redis_exporter:latest
+        ports:
+        - containerPort: 9121
+          name: metrics
+        env:
+        - name: REDIS_ADDR
+          value: "redis://redis-service:6379"
+        - name: REDIS_USER
+          valueFrom:
+            secretKeyRef:
+              name: redis-credentials
+              key: username
+              optional: true
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-credentials
+              key: password
+              optional: true
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+        livenessProbe:
+          httpGet:
+            path: /metrics
+            port: 9121
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /metrics
+            port: 9121
+          initialDelaySeconds: 5
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-exporter-service
+  namespace: monitoring
+  labels:
+    app: redis-exporter
+spec:
+  ports:
+  - port: 9121
+    targetPort: 9121
+    name: metrics
+  selector:
+    app: redis-exporter
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: redis-exporter
+  namespace: monitoring
+  labels:
+    app: redis-exporter
+spec:
+  selector:
+    matchLabels:
+      app: redis-exporter
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics
