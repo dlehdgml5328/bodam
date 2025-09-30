@@ -35,14 +35,23 @@ class Notification(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     type: Mapped[NotificationType] = mapped_column(
-        SAEnum(NotificationType, name="notification_type"), nullable=False
+        SAEnum(
+            NotificationType,
+            name="notification_type",
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        nullable=False,
     )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
     related_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     channels: Mapped[list[str]] = mapped_column(ARRAY(String(20)), nullable=False)
     status: Mapped[NotificationStatus] = mapped_column(
-        SAEnum(NotificationStatus, name="notification_status"),
+        SAEnum(
+            NotificationStatus,
+            name="notification_status",
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
         nullable=False,
         default=NotificationStatus.PENDING,
     )

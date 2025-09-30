@@ -24,24 +24,20 @@ def upgrade() -> None:
 
     # Password reset tokens
     op.create_index("idx_password_reset_user_expires", "password_reset_tokens", ["user_id", "expires_at"])
-    op.create_index("idx_password_reset_token_used", "password_reset_tokens", ["token", "is_used"])
+    op.create_index("idx_password_reset_token_used", "password_reset_tokens", ["token", "used"])
 
     # Fire station performance
-    op.create_index("idx_fire_stations_active", "fire_stations", ["is_active"])
 
     # Group and receipt tracking
-    op.create_index("idx_groups_user_created", "groups", ["user_id", "created_at"])
+    op.create_index("idx_groups_user_created", "groups", ["creator_id", "created_at"])
     op.create_index("idx_receipts_donation_created", "receipts", ["donation_id", "created_at"])
 
     # Refund tracking
-    op.create_index("idx_refunds_donation_status", "refunds", ["donation_id", "status"])
 
 
 def downgrade() -> None:
-    op.drop_index("idx_refunds_donation_status", table_name="refunds")
     op.drop_index("idx_receipts_donation_created", table_name="receipts")
     op.drop_index("idx_groups_user_created", table_name="groups")
-    op.drop_index("idx_fire_stations_active", table_name="fire_stations")
     op.drop_index("idx_password_reset_token_used", table_name="password_reset_tokens")
     op.drop_index("idx_password_reset_user_expires", table_name="password_reset_tokens")
     op.drop_index("idx_donations_amount_type", table_name="donations")

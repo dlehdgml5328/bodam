@@ -18,6 +18,7 @@ def upgrade() -> None:
         "news_content",
         ["embedding"],
         postgresql_using="ivfflat",
+        postgresql_ops={"embedding": "vector_l2_ops"},
         postgresql_with={"lists": 100},
     )
     op.create_index(

@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import List
+
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 
 @dataclass
@@ -13,9 +20,11 @@ class SecuritySettings:
     cookie_domain: str | None = os.getenv("COOKIE_DOMAIN") or None
     cookie_secure: bool = os.getenv("COOKIE_SECURE", "true").lower() == "true"
     cookie_samesite: str = os.getenv("COOKIE_SAMESITE", "None")
-    allowed_origins: List[str] = os.getenv(
-        "ALLOWED_ORIGINS", "https://app.bodam.example"
-    ).split(",")
+    allowed_origins: List[str] = field(
+        default_factory=lambda: os.getenv(
+            "ALLOWED_ORIGINS", "https://app.bodam.example"
+        ).split(",")
+    )
     jwt_secret: str = os.getenv("JWT_SECRET", "change-me-secret")
     jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
     jwt_private_key: str | None = os.getenv("JWT_PRIVATE_KEY")

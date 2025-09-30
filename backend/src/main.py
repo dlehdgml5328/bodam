@@ -1,16 +1,33 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 
 from .api import auth, donations, files, geo, groups, health, jobs, kakao, live, refunds, stations, webpush
 from .api.admin import refunds as admin_refunds, resources as admin_resources, search as admin_search
 from .api.webhooks import toss
 from .middleware.auth import AuthMiddleware
-from .middleware.rate_limiter import RateLimitMiddleware
+from .config.security import get_security_settings
 
 app = FastAPI(title="BoDam API")
 
-# Add middleware (order matters - last added runs first)
+# Get security settings
+settings = get_security_settings()
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.allowed_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+)
+
+# Add other middleware (order matters - last added runs first)
 app.add_middleware(AuthMiddleware)
-app.add_middleware(RateLimitMiddleware)
+# Rate limiting 일시적으로 비활성화 (개발 중)
+# app.add_middleware(RateLimitMiddleware)
 
 app.include_router(auth.router)
 app.include_router(donations.router)

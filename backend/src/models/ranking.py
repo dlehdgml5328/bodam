@@ -36,7 +36,12 @@ class Ranking(Base):
     donation_count: Mapped[int] = mapped_column(Integer, nullable=False)
     rank: Mapped[int] = mapped_column(Integer, nullable=False)
     period: Mapped[RankingPeriod] = mapped_column(
-        SAEnum(RankingPeriod, name="ranking_period"), nullable=False
+        SAEnum(
+            RankingPeriod,
+            name="ranking_period",
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        nullable=False,
     )
     calculated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

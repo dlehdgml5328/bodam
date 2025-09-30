@@ -32,7 +32,13 @@ class Refund(Base):
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     status: Mapped[RefundStatus] = mapped_column(
-        SAEnum(RefundStatus, name="refund_status"), nullable=False, default=RefundStatus.PENDING
+        SAEnum(
+            RefundStatus,
+            name="refund_status",
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        nullable=False,
+        default=RefundStatus.PENDING,
     )
     reviewer_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

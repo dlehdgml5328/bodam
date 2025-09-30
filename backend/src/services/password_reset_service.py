@@ -17,7 +17,7 @@ class PasswordResetTokenNotFoundError(Exception):
 
 
 class PasswordResetTokenExpiredError(Exception):
-    ""Raised when a password reset token has expired or already used."""
+    """Raised when a password reset token has expired or already used."""
 
 
 class PasswordResetService:

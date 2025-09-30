@@ -40,11 +40,22 @@ class Donation(Base):
     )
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     type: Mapped[DonationType] = mapped_column(
-        SAEnum(DonationType, name="donation_type"), nullable=False
+        SAEnum(
+            DonationType,
+            name="donation_type",
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        nullable=False,
     )
     frequency: Mapped[str | None] = mapped_column(String(20))
     status: Mapped[DonationStatus] = mapped_column(
-        SAEnum(DonationStatus, name="donation_status"), nullable=False, default=DonationStatus.PENDING
+        SAEnum(
+            DonationStatus,
+            name="donation_status",
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        nullable=False,
+        default=DonationStatus.PENDING,
     )
     payment_method: Mapped[str | None] = mapped_column(String(50))
     toss_payment_key: Mapped[str | None] = mapped_column(String(120))

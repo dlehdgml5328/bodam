@@ -31,7 +31,13 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
     role: Mapped[UserRole] = mapped_column(
-        SAEnum(UserRole, name="user_role"), nullable=False, default=UserRole.DONOR
+        SAEnum(
+            UserRole,
+            name="user_role",
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        nullable=False,
+        default=UserRole.DONOR,
     )
     social_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
     social_id: Mapped[str | None] = mapped_column(String(120), nullable=True)

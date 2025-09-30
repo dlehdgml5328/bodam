@@ -5,6 +5,21 @@ import { useState, useEffect } from 'react';
 export default function ScrollToTop() {
   const [isVisible, setIsVisible] = useState(false);
 
+  const buttonClassName = [
+    'fixed bottom-8 right-8 z-50',
+    'flex h-12 w-12 items-center justify-center',
+    'rounded-full bg-red-600 text-white',
+    'shadow-lg transition-all duration-200',
+    'hover:bg-red-700 hover:shadow-xl',
+    'group',
+  ].join(' ');
+
+  const iconClassName = [
+    'ri-arrow-up-line text-xl',
+    'transform transition-transform duration-200',
+    'group-hover:-translate-y-0.5',
+  ].join(' ');
+
   useEffect(() => {
     const toggleVisibility = () => {
       if (window.pageYOffset > 300) {
@@ -33,10 +48,10 @@ export default function ScrollToTop() {
   return (
     <button
       onClick={scrollToTop}
-      className="fixed bottom-8 right-8 z-50 w-12 h-12 bg-red-600 hover:bg-red-700 text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-center group"
+      className={buttonClassName}
       aria-label="맨 위로 가기"
     >
-      <i className="ri-arrow-up-line text-xl group-hover:transform group-hover:-translate-y-0.5 transition-transform duration-200"></i>
+      <i className={iconClassName}></i>
     </button>
   );
 }

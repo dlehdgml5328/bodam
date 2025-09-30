@@ -42,7 +42,13 @@ class Group(Base):
     invite_code: Mapped[str] = mapped_column(String(24), unique=True, nullable=False)
     deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[GroupStatus] = mapped_column(
-        SAEnum(GroupStatus, name="group_status"), nullable=False, default=GroupStatus.ACTIVE
+        SAEnum(
+            GroupStatus,
+            name="group_status",
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        nullable=False,
+        default=GroupStatus.ACTIVE,
     )
     member_count: Mapped[int] = mapped_column(nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(

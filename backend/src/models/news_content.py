@@ -44,7 +44,11 @@ class NewsContent(Base):
     summary: Mapped[str] = mapped_column(Text, nullable=False)
     keywords: Mapped[list[str]] = mapped_column(ARRAY(String(50)), nullable=False, default=list)
     status: Mapped[ContentStatus] = mapped_column(
-        SAEnum(ContentStatus, name="content_status"),
+        SAEnum(
+            ContentStatus,
+            name="content_status",
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
         nullable=False,
         default=ContentStatus.PENDING_REVIEW,
     )

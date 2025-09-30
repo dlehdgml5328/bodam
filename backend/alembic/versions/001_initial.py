@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from alembic import op
+from geoalchemy2 import Geometry
+from pgvector.sqlalchemy import Vector
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
@@ -13,28 +15,36 @@ branch_labels = None
 depends_on = None
 
 
-def upgrade() -> None:
-    user_role = sa.Enum("donor", "admin", "moderator", name="user_role")
-    station_status = sa.Enum("active", "closed", "merged", name="station_status")
-    donation_type = sa.Enum("one_time", "recurring", name="donation_type")
-    donation_status = sa.Enum("pending", "completed", "failed", "refunded", name="donation_status")
-    content_status = sa.Enum(
-        "auto_approved", "pending_review", "rejected", name="content_status"
+def _ensure_enum(name: str, *values: str) -> postgresql.ENUM:
+    labels = ", ".join(f"'{value}'" for value in values)
+    op.execute(
+        sa.text(
+            f"""
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = '{name}') THEN
+        CREATE TYPE {name} AS ENUM ({labels});
+    END IF;
+END
+$$;
+"""
+        )
     )
-    notification_type = sa.Enum("donation_success", "incident_alert", "system", name="notification_type")
-    notification_status = sa.Enum("pending", "sent", "failed", name="notification_status")
-    group_status = sa.Enum("active", "completed", "expired", name="group_status")
-    ranking_period = sa.Enum("monthly", "yearly", "all_time", name="ranking_period")
+    enum_type = postgresql.ENUM(*values, name=name, create_type=False)
+    enum_type.create = lambda *args, **kwargs: None  # type: ignore[assignment]
+    return enum_type
 
-    user_role.create(op.get_bind(), checkfirst=True)
-    station_status.create(op.get_bind(), checkfirst=True)
-    donation_type.create(op.get_bind(), checkfirst=True)
-    donation_status.create(op.get_bind(), checkfirst=True)
-    content_status.create(op.get_bind(), checkfirst=True)
-    notification_type.create(op.get_bind(), checkfirst=True)
-    notification_status.create(op.get_bind(), checkfirst=True)
-    group_status.create(op.get_bind(), checkfirst=True)
-    ranking_period.create(op.get_bind(), checkfirst=True)
+
+def upgrade() -> None:
+    user_role = _ensure_enum("user_role", "donor", "admin", "moderator")
+    station_status = _ensure_enum("station_status", "active", "closed", "merged")
+    donation_type = _ensure_enum("donation_type", "one_time", "recurring")
+    donation_status = _ensure_enum("donation_status", "pending", "completed", "failed", "refunded")
+    content_status = _ensure_enum("content_status", "auto_approved", "pending_review", "rejected")
+    notification_type = _ensure_enum("notification_type", "donation_success", "incident_alert", "system")
+    notification_status = _ensure_enum("notification_status", "pending", "sent", "failed")
+    group_status = _ensure_enum("group_status", "active", "completed", "expired")
+    ranking_period = _ensure_enum("ranking_period", "monthly", "yearly", "all_time")
 
     op.create_table(
         "users",
@@ -119,7 +129,7 @@ def upgrade() -> None:
         sa.Column("source_url", sa.String(length=255), nullable=False),
         sa.Column("published_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("location", Geometry(geometry_type="POINT", srid=4326)),
-        sa.Column("embedding", postgresql.ARRAY(sa.Float()), nullable=False),
+        sa.Column("embedding", Vector(1536), nullable=False),
         sa.Column("relevance_score", sa.Integer(), nullable=False),
         sa.Column("summary", sa.Text(), nullable=False),
         sa.Column("keywords", postgresql.ARRAY(sa.String(length=50)), nullable=False),

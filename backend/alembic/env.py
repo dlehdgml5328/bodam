@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import pool
+from sqlalchemy import create_engine, pool
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from src.database.connection import DATABASE_URL
 from src.models.base import Base
@@ -40,22 +38,27 @@ def do_run_migrations(connection: Connection) -> None:
         context.run_migrations()
 
 
-async def run_migrations_online() -> None:
-    connectable: AsyncEngine = create_async_engine(
-        DATABASE_URL, poolclass=pool.NullPool
-    )
+def _sync_database_url(url: str) -> str:
+    if url.startswith("postgresql+asyncpg"):
+        return url.replace("postgresql+asyncpg", "postgresql+psycopg")
+    return url
 
-    async with connectable.connect() as connection:
-        await connection.run_sync(do_run_migrations)
 
-    await connectable.dispose()
+def run_migrations_online() -> None:
+    sync_url = _sync_database_url(DATABASE_URL)
+    connectable = create_engine(sync_url, poolclass=pool.NullPool)
+
+    with connectable.connect() as connection:
+        do_run_migrations(connection)
+
+    connectable.dispose()
 
 
 def run_migrations() -> None:
     if context.is_offline_mode():
         run_migrations_offline()
     else:
-        asyncio.run(run_migrations_online())
+        run_migrations_online()
 
 
 run_migrations()

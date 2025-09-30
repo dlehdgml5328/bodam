@@ -35,7 +35,13 @@ class FireStation(Base):
     region: Mapped[str] = mapped_column(String(100), nullable=False)
     district: Mapped[str] = mapped_column(String(100), nullable=False)
     status: Mapped[StationStatus] = mapped_column(
-        SAEnum(StationStatus, name="station_status"), nullable=False, default=StationStatus.ACTIVE
+        SAEnum(
+            StationStatus,
+            name="station_status",
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        nullable=False,
+        default=StationStatus.ACTIVE,
     )
     total_received: Mapped[Decimal] = mapped_column(
         Numeric(14, 2), nullable=False, default=Decimal("0.00")
