@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: 보담 기부 API
-  description: 기부 및 결제 관리 API
-  version: 1.0.0
+  description: 기부 및 정기결제 관리 API
+  version: 1.1.0
 
 servers:
   - url: https://api.bodam.example
@@ -12,7 +12,7 @@ paths:
   /donations:
     get:
       summary: 기부 내역 조회
-      description: 사용자의 기부 내역 목록 조회
+      description: 인증된 사용자의 기부 내역을 페이지 단위로 조회합니다.
       security:
         - bearerAuth: []
       parameters:
@@ -32,6 +32,11 @@ paths:
           schema:
             type: string
             enum: [pending, completed, failed, refunded]
+        - name: mode
+          in: query
+          schema:
+            type: string
+            enum: [single, multiple]
       responses:
         '200':
           description: 기부 내역 조회 성공
@@ -50,10 +55,9 @@ paths:
                     type: integer
                   limit:
                     type: integer
-
     post:
-      summary: 새 기부 생성
-      description: 일시 또는 정기 기부 생성
+      summary: 기부 결제 준비
+      description: 일시/복수/정기/단체 기부를 생성하고 Toss 결제 또는 빌링 인증 정보를 반환합니다.
       security:
         - bearerAuth: []
       requestBody:
@@ -61,63 +65,23 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required:
-                - fire_station_id
-                - amount
-                - type
-              properties:
-                fire_station_id:
-                  type: string
-                  format: uuid
-                  description: 기부 대상 소방서 ID
-                amount:
-                  type: number
-                  format: decimal
-                  minimum: 1000
-                  description: 기부 금액 (최소 1,000원)
-                type:
-                  type: string
-                  enum: [one_time, recurring]
-                  description: 기부 유형
-                frequency:
-                  type: string
-                  enum: [monthly, yearly]
-                  description: 정기결제 주기 (recurring 타입일 때 필수)
-                message:
-                  type: string
-                  maxLength: 500
-                  description: 기부 메시지 (선택)
-                is_anonymous:
-                  type: boolean
-                  default: false
-                  description: 익명 기부 여부
+              $ref: '#/components/schemas/DonationCheckoutRequest'
       responses:
         '201':
-          description: 기부 생성 성공
+          description: 결제 준비 완료
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  donation_id:
-                    type: string
-                    format: uuid
-                  payment_url:
-                    type: string
-                    description: Toss 결제 페이지 URL
-                  order_id:
-                    type: string
-                    description: 주문 번호
+                $ref: '#/components/schemas/DonationCheckoutResponse'
         '400':
           description: 잘못된 요청 데이터
         '404':
-          description: 소방서를 찾을 수 없음
+          description: 대상 소방서/그룹을 찾을 수 없음
 
   /donations/{donation_id}:
     get:
       summary: 기부 상세 조회
-      description: 특정 기부의 상세 정보 조회
+      description: 특정 기부의 전체 정보를 조회합니다.
       security:
         - bearerAuth: []
       parameters:
@@ -135,14 +99,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/DonationDetail'
         '403':
-          description: 접근 권한 없음 (다른 사용자의 기부)
+          description: 접근 권한 없음
         '404':
           description: 기부를 찾을 수 없음
 
   /donations/{donation_id}/receipt:
     get:
       summary: 영수증 다운로드
-      description: 기부 영수증 PDF 다운로드
       security:
         - bearerAuth: []
       parameters:
@@ -160,15 +123,12 @@ paths:
               schema:
                 type: string
                 format: binary
-        '403':
-          description: 접근 권한 없음
-        '404':
-          description: 영수증을 찾을 수 없음
+        '403': { description: 접근 권한 없음 }
+        '404': { description: 영수증을 찾을 수 없음 }
 
   /donations/{donation_id}/refund:
     post:
       summary: 환불 요청
-      description: 완료된 기부에 대한 환불 요청
       security:
         - bearerAuth: []
       parameters:
@@ -184,14 +144,12 @@ paths:
           application/json:
             schema:
               type: object
-              required:
-                - reason
+              required: [reason]
               properties:
                 reason:
                   type: string
                   minLength: 10
                   maxLength: 500
-                  description: 환불 사유
       responses:
         '201':
           description: 환불 요청 접수
@@ -205,24 +163,21 @@ paths:
                     format: uuid
                   status:
                     type: string
-                    example: "pending_review"
+                    example: pending_review
                   message:
                     type: string
-                    example: "환불 요청이 접수되었습니다"
-        '400':
-          description: 환불 불가능한 상태
-        '403':
-          description: 접근 권한 없음
+                    example: 환불 요청이 접수되었습니다
+        '400': { description: 환불 불가능한 상태 }
+        '403': { description: 접근 권한 없음 }
 
   /subscriptions:
     get:
-      summary: 정기결제 목록 조회
-      description: 사용자의 정기결제 구독 목록
+      summary: 정기 기부 구독 목록
       security:
         - bearerAuth: []
       responses:
         '200':
-          description: 정기결제 목록 조회 성공
+          description: 구독 목록 조회 성공
           content:
             application/json:
               schema:
@@ -232,11 +187,9 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/Subscription'
-
-  /subscriptions/{subscription_id}/cancel:
+  /subscriptions/{subscription_id}/pause:
     post:
-      summary: 정기결제 취소
-      description: 활성 정기결제 취소
+      summary: 정기 기부 일시정지
       security:
         - bearerAuth: []
       parameters:
@@ -247,45 +200,202 @@ paths:
             type: string
             format: uuid
       responses:
-        '200':
-          description: 정기결제 취소 성공
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: "정기결제가 취소되었습니다"
-        '403':
-          description: 접근 권한 없음
-        '404':
-          description: 정기결제를 찾을 수 없음
+        '200': { description: 일시정지 완료 }
+        '400': { description: 처리 불가 상태 }
+        '404': { description: 구독을 찾을 수 없음 }
+  /subscriptions/{subscription_id}/resume:
+    post:
+      summary: 정기 기부 재개
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: subscription_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200': { description: 재개 완료 }
+        '400': { description: 처리 불가 상태 }
+        '404': { description: 구독을 찾을 수 없음 }
+  /subscriptions/{subscription_id}/cancel:
+    post:
+      summary: 정기 기부 해지
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: subscription_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200': { description: 해지 완료 }
+        '400': { description: 처리 불가 상태 }
+        '404': { description: 구독을 찾을 수 없음 }
 
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
   schemas:
+    DonationCheckoutRequest:
+      type: object
+      required: [mode, amount]
+      properties:
+        mode:
+          type: string
+          enum: [single, multiple]
+          description: 단일/복수 기부 모드
+        multiple_type:
+          type: string
+          enum: [split, each, custom]
+          description: 복수 기부 시 분배 방식
+        amount:
+          type: number
+          format: decimal
+          minimum: 1000
+          description: 총 결제 금액
+        currency:
+          type: string
+          default: KRW
+        fire_station_id:
+          type: string
+          format: uuid
+          description: 단일 기부 시 대상 소방서 ID
+        allocations:
+          type: array
+          items:
+            $ref: '#/components/schemas/DonationAllocationInput'
+          description: 복수 기부 시 소방서별 분배 정보
+        donor:
+          $ref: '#/components/schemas/DonorInfoInput'
+        group:
+          $ref: '#/components/schemas/GroupDonationInput'
+        regular:
+          $ref: '#/components/schemas/RegularDonationInput'
+        message:
+          type: string
+          maxLength: 500
+        metadata:
+          type: object
+          additionalProperties: true
+        success_redirect_url:
+          type: string
+          format: uri
+          description: 결제 성공 후 이동할 URL
+        fail_redirect_url:
+          type: string
+          format: uri
+          description: 결제 실패 시 이동할 URL
+    DonationAllocationInput:
+      type: object
+      required: [fire_station_id, amount]
+      properties:
+        fire_station_id:
+          type: string
+          format: uuid
+        amount:
+          type: number
+          format: decimal
+          minimum: 0
+        allocation_type:
+          type: string
+          enum: [primary, split, each, custom]
+          default: primary
+    DonorInfoInput:
+      type: object
+      properties:
+        display_name:
+          type: string
+          description: 표시용 이름 (익명일 경우 노출)
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        is_anonymous:
+          type: boolean
+          default: false
+        needs_receipt:
+          type: boolean
+          default: false
+        id_number:
+          type: string
+          description: 기부금 영수증 발급용 식별 번호
+    GroupDonationInput:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          default: false
+        group_id:
+          type: string
+          format: uuid
+        group_code:
+          type: string
+        group_name:
+          type: string
+        contact_name:
+          type: string
+        contact_email:
+          type: string
+          format: email
+        contact_phone:
+          type: string
+    RegularDonationInput:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          default: false
+        cycle:
+          type: string
+          enum: [monthly, quarterly, yearly]
+        start_date:
+          type: string
+          format: date
+        customer_key:
+          type: string
+          description: Toss Customer Key (있을 경우)
+    DonationCheckoutResponse:
+      type: object
+      properties:
+        donation_id:
+          type: string
+          format: uuid
+        order_id:
+          type: string
+        payment_url:
+          type: string
+          format: uri
+          description: 일시 결제 URL
+        billing_auth_url:
+          type: string
+          format: uri
+          description: 정기 기부 빌링 인증 URL (정기일 때)
+        subscription_id:
+          type: string
+          format: uuid
     Donation:
       type: object
       properties:
         id:
           type: string
           format: uuid
-        fire_station:
-          type: object
-          properties:
-            id:
-              type: string
-              format: uuid
-            name:
-              type: string
-            region:
-              type: string
+        mode:
+          type: string
+          enum: [single, multiple]
         amount:
           type: number
           format: decimal
-        type:
+        currency:
           type: string
-          enum: [one_time, recurring]
         status:
           type: string
           enum: [pending, completed, failed, refunded]
@@ -293,73 +403,142 @@ components:
           type: string
         is_anonymous:
           type: boolean
+        needs_receipt:
+          type: boolean
         created_at:
           type: string
           format: date-time
         completed_at:
           type: string
           format: date-time
-
+        fire_station:
+          $ref: '#/components/schemas/FireStationSummary'
+        allocations:
+          type: array
+          items:
+            $ref: '#/components/schemas/DonationAllocationSummary'
+        group:
+          $ref: '#/components/schemas/GroupDonationSummary'
+        regular:
+          $ref: '#/components/schemas/RegularDonationSummary'
+        payment:
+          $ref: '#/components/schemas/DonationPaymentInfo'
     DonationDetail:
       allOf:
         - $ref: '#/components/schemas/Donation'
         - type: object
           properties:
-            payment_method:
-              type: string
-            toss_payment_key:
-              type: string
             receipt_url:
               type: string
-            refund_info:
-              type: object
-              properties:
-                refund_id:
-                  type: string
-                  format: uuid
-                status:
-                  type: string
-                reason:
-                  type: string
-                requested_at:
-                  type: string
-                  format: date-time
-
+              format: uri
+            refund:
+              $ref: '#/components/schemas/RefundInfo'
+    DonationAllocationSummary:
+      type: object
+      properties:
+        fire_station:
+          $ref: '#/components/schemas/FireStationSummary'
+        amount:
+          type: number
+          format: decimal
+        allocation_type:
+          type: string
+          enum: [primary, split, each, custom]
+    FireStationSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        region:
+          type: string
+        district:
+          type: string
+    GroupDonationSummary:
+      type: object
+      properties:
+        group_id:
+          type: string
+          format: uuid
+        group_name:
+          type: string
+        is_anonymous:
+          type: boolean
+        contact_name:
+          type: string
+    RegularDonationSummary:
+      type: object
+      properties:
+        subscription_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [active, paused, cancelled]
+        cycle:
+          type: string
+          enum: [monthly, quarterly, yearly]
+        next_billing_at:
+          type: string
+          format: date-time
+    DonationPaymentInfo:
+      type: object
+      properties:
+        method:
+          type: string
+        toss_order_id:
+          type: string
+        toss_payment_key:
+          type: string
+    RefundInfo:
+      type: object
+      properties:
+        refund_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+        reason:
+          type: string
+        requested_at:
+          type: string
+          format: date-time
     Subscription:
       type: object
       properties:
         id:
           type: string
           format: uuid
-        fire_station:
-          type: object
-          properties:
-            id:
-              type: string
-              format: uuid
-            name:
-              type: string
-        amount:
-          type: number
-          format: decimal
-        frequency:
-          type: string
-          enum: [monthly, yearly]
         status:
           type: string
           enum: [active, paused, cancelled]
-        next_payment_date:
+        cycle:
           type: string
-          format: date
-        created_at:
+          enum: [monthly, quarterly, yearly]
+        amount:
+          type: number
+          format: decimal
+        currency:
+          type: string
+        next_billing_at:
           type: string
           format: date-time
-        last_payment_date:
+        started_at:
           type: string
           format: date-time
-
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
+        paused_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time
+        fire_stations:
+          type: array
+          items:
+            $ref: '#/components/schemas/FireStationSummary'
+        billing_customer_key:
+          type: string
+        billing_key:
+          type: string

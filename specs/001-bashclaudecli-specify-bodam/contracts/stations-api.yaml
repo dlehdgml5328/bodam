@@ -204,6 +204,49 @@ paths:
                     items:
                       $ref: '#/components/schemas/NewsContent'
 
+  /emergency-stations:
+    get:
+      summary: 실시간 소방서 출동 현황
+      description: 긴급 출동 및 현장 대응 중인 소방서 현황을 조회합니다.
+      parameters:
+        - name: region
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 시/도 필터
+        - name: priority
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [high, medium, low]
+          description: 긴급도 필터
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+          description: 조회 대상 소방서 수
+      responses:
+        '200':
+          description: 출동 현황 조회 성공
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  as_of:
+                    type: string
+                    format: date-time
+                    description: 데이터 기준 시각
+                  stations:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EmergencyStationStatus'
+
   /stations/{station_id}/favorites:
     post:
       summary: 소방서 즐겨찾기 추가
@@ -312,6 +355,44 @@ components:
             is_favorite:
               type: boolean
               description: 현재 사용자의 즐겨찾기 여부
+
+    EmergencyStationStatus:
+      type: object
+      properties:
+        station:
+          $ref: '#/components/schemas/FireStation'
+        status:
+          type: string
+          enum: [dispatching, suppressing, standby, maintenance]
+          description: 현장 대응 상태 코드
+        status_label:
+          type: string
+          description: 사용자 표시용 상태 문구 (예: "출동 중")
+        priority:
+          type: string
+          enum: [high, medium, low]
+          description: 긴급도 수준
+        updated_at:
+          type: string
+          format: date-time
+          description: 최신 상태 갱신 시각
+        summary:
+          type: string
+          description: 현장 요약 메시지
+        active_incidents:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              title:
+                type: string
+              started_at:
+                type: string
+                format: date-time
+          description: 연관 사고 목록 (선택)
 
     Ranking:
       type: object

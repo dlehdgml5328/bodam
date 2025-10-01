@@ -2,22 +2,36 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Sequence
 
 from geoalchemy2 import functions as geo_func
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from src.models.fire_station import FireStation
+from src.models.fire_station import (
+    EmergencyPriority,
+    FireStation,
+    FireStationActiveIncident,
+    FireStationStatus,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class FireStationNotFoundError(Exception):
     """Raised when a requested fire station is missing."""
+
+
+@dataclass(slots=True)
+class EmergencyStatusRecord:
+    status: FireStationStatus
+    coordinates: tuple[float | None, float | None] | None
 
 
 class FireStationService:
@@ -94,5 +108,54 @@ class FireStationService:
         await self._session.flush()
         return station
 
+    async def get_emergency_statuses(
+        self,
+        *,
+        region: str | None = None,
+        priority: EmergencyPriority | None = None,
+        limit: int = 50,
+    ) -> list[EmergencyStatusRecord]:
+        geojson = func.ST_AsGeoJSON(FireStation.location).label("location_geojson")
+        stmt = (
+            select(FireStationStatus, geojson)
+            .join(FireStation, FireStation.id == FireStationStatus.station_id)
+            .options(
+                selectinload(FireStationStatus.station),
+                selectinload(FireStationStatus.active_incidents).selectinload(
+                    FireStationActiveIncident.incident
+                ),
+            )
+            .order_by(FireStationStatus.updated_at.desc())
+            .limit(limit)
+        )
 
-__all__ = ["FireStationService", "FireStationNotFoundError"]
+        if region:
+            stmt = stmt.where(FireStation.region == region)
+        if priority:
+            stmt = stmt.where(FireStationStatus.priority == priority)
+
+        result = await self._session.execute(stmt)
+        rows = result.unique().all()
+
+        records: list[EmergencyStatusRecord] = []
+        for status, location_json in rows:
+            coordinates: tuple[float | None, float | None] | None = None
+            if location_json:
+                try:
+                    data = json.loads(location_json)
+                    coords = data.get("coordinates")
+                    if isinstance(coords, (list, tuple)) and len(coords) >= 2:
+                        # GeoJSON coordinates are [lng, lat]
+                        coordinates = (float(coords[1]), float(coords[0]))
+                except (ValueError, TypeError):
+                    coordinates = None
+            records.append(EmergencyStatusRecord(status=status, coordinates=coordinates))
+
+        return records
+
+
+__all__ = [
+    "FireStationService",
+    "FireStationNotFoundError",
+    "EmergencyStatusRecord",
+]
