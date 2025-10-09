@@ -14,6 +14,7 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from src.cache.fire_station import invalidate_after_station_update
 from src.models.fire_station import (
     EmergencyPriority,
     FireStation,
@@ -106,6 +107,7 @@ class FireStationService:
         if total_received is not None:
             station.total_received = total_received
         await self._session.flush()
+        await invalidate_after_station_update(station)
         return station
 
     async def get_emergency_statuses(

@@ -1,0 +1,49 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: redis-queue-backup
+  labels:
+    app: redis-queue-backup
+    component: queue
+    part-of: bodam
+spec:
+  schedule: "0 2 * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: redis-queue-backup
+        spec:
+          serviceAccountName: default
+          restartPolicy: OnFailure
+          containers:
+            - name: redis-backup
+              image: bitnami/redis:7.2.4-debian-12-r0
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -euo pipefail
+                  apt-get update >/dev/null && apt-get install -y awscli >/dev/null
+                  redis-cli -h redis-queue-service -p 6379 BGSAVE
+                  sleep 10
+                  redis-cli -h redis-queue-service -p 6379 --rdb /tmp/redis-queue-dump.rdb
+                  aws s3 cp /tmp/redis-queue-dump.rdb s3://$S3_BUCKET/redis-queue-$(date +%Y%m%d%H%M%S).rdb
+              env:
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: aws-credentials
+                      key: access-key-id
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: aws-credentials
+                      key: secret-access-key
+                - name: S3_BUCKET
+                  value: bodam-redis-backups
+                - name: AWS_DEFAULT_REGION
+                  value: ap-northeast-2

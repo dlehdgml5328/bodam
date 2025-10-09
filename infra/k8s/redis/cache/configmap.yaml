@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-cache-config
+  labels:
+    app: redis-cache
+    component: cache
+    part-of: bodam
+data:
+  redis.conf: |
+    maxmemory 512mb
+    maxmemory-policy allkeys-lru
+    save ""
+    appendonly no

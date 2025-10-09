@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import uuid
+from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone
+import os
 from decimal import Decimal
 from typing import Any
 
@@ -14,12 +16,29 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.database.connection import get_session
 from src.models.donation import (
     AllocationType,
+    Donation,
+    DonationAllocation,
     DonationMode,
     DonationStatus,
+    DonationSubscription,
     DonationType,
     SubscriptionCycle,
     SubscriptionStatus,
 )
+from src.models.user import User
+from src.security.session import get_current_user_from_bearer, get_current_user_with_csrf
+from src.services.donation_service import (
+    AllocationSpec,
+    BillingAuthorization,
+    DonationService,
+    DonorInfoSpec,
+    GroupInfoSpec,
+    PaymentConfirmation,
+    PaymentsGateway,
+    RegularDonationSpec,
+)
+from src.services.user_service import UserNotFoundError, UserService
+from src.integrations.toss_payments import TossPaymentsClient
 
 router = APIRouter(tags=["donations"])
 
@@ -47,6 +66,7 @@ class GroupDonationInput(BaseModel):
     contact_name: str | None = None
     contact_email: str | None = None
     contact_phone: str | None = None
+    is_anonymous: bool = False
 
 
 class RegularDonationInput(BaseModel):
@@ -168,24 +188,89 @@ class SubscriptionResponse(BaseModel):
 
 @router.post("/donations", response_model=DonationCheckoutResponse, status_code=status.HTTP_201_CREATED)
 async def create_donation_checkout(
-    payload: DonationCheckoutRequest, session: AsyncSession = Depends(get_session)
+    payload: DonationCheckoutRequest,
+    current_user: User = Depends(get_current_user_from_bearer),
+    session: AsyncSession = Depends(get_session),
 ) -> DonationCheckoutResponse:
     payload.validate_business_rules()
-    # TODO: 실제 DonationService 연동 (Step 02 구현 범위에 포함)
-    donation_id = uuid.uuid4()
-    order_id = f"bodam-{donation_id}"
-    payment_url = "https://pay.toss.im/checkout"
-    billing_auth_url = (
-        "https://pay.toss.im/billing"
-        if payload.regular and payload.regular.enabled
+
+    incoming_email = payload.donor.email
+    if incoming_email and incoming_email.lower() != current_user.email.lower():
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="EMAIL_MISMATCH")
+
+    donor_email = incoming_email or current_user.email
+
+    donor_spec = DonorInfoSpec(
+        display_name=payload.donor.display_name,
+        email=donor_email,
+        phone=payload.donor.phone,
+        is_anonymous=payload.donor.is_anonymous,
+        needs_receipt=payload.donor.needs_receipt,
+        id_number=payload.donor.id_number,
+    )
+
+    user = current_user
+
+    allocations = (
+        [
+            AllocationSpec(
+                fire_station_id=item.fire_station_id,
+                amount=item.amount,
+                allocation_type=item.allocation_type,
+            )
+            for item in payload.allocations or []
+        ]
+        or None
+    )
+
+    group_spec = (
+        GroupInfoSpec(
+            group_id=payload.group.group_id if payload.group.group_id else None,
+            group_code=payload.group.group_code,
+            group_name=payload.group.group_name,
+            contact_name=payload.group.contact_name,
+            contact_email=payload.group.contact_email,
+            contact_phone=payload.group.contact_phone,
+            is_anonymous=payload.group.is_anonymous,
+        )
+        if payload.group and payload.group.enabled
         else None
     )
+
+    regular_spec = (
+        RegularDonationSpec(
+            cycle=payload.regular.cycle,
+            start_date=payload.regular.start_date,
+            customer_key=payload.regular.customer_key,
+        )
+        if payload.regular and payload.regular.enabled and payload.regular.cycle
+        else None
+    )
+
+    async with _payments_gateway() as gateway:
+        service = DonationService(session, gateway)
+        intent = await service.prepare_donation_checkout(
+            user_id=user.id,
+            mode=payload.mode,
+            amount=payload.amount,
+            currency=payload.currency,
+            fire_station_id=payload.fire_station_id,
+            allocations=allocations,
+            donor=donor_spec,
+            group=group_spec,
+            regular=regular_spec,
+            message=payload.message,
+            metadata=payload.metadata,
+            success_url=payload.success_redirect_url,
+            fail_url=payload.fail_redirect_url,
+        )
+
     return DonationCheckoutResponse(
-        donation_id=donation_id,
-        order_id=order_id,
-        payment_url=payment_url if not billing_auth_url else None,
-        billing_auth_url=billing_auth_url,
-        subscription_id=uuid.uuid4() if billing_auth_url else None,
+        donation_id=intent.donation.id,
+        order_id=intent.donation.toss_order_id,
+        payment_url=intent.payment_url,
+        billing_auth_url=intent.billing_auth_url,
+        subscription_id=intent.subscription.id if intent.subscription else None,
     )
 
 
@@ -194,91 +279,47 @@ async def list_donations(
     page: int = 1,
     limit: int = 20,
     status_filter: DonationStatus | None = None,
+    donor_email: str | None = None,
+    session: AsyncSession = Depends(get_session),
 ) -> dict:
-    donation_id = uuid.uuid4()
-    station_id = uuid.uuid4()
-    now = datetime.now(timezone.utc)
-    donation = DonationResponse(
-        id=donation_id,
-        mode=DonationMode.SINGLE,
-        amount=Decimal("30000"),
-        currency="KRW",
-        status=status_filter or DonationStatus.PENDING,
-        message="응원합니다",
-        is_anonymous=False,
-        needs_receipt=True,
-        created_at=now,
-        completed_at=None,
-        fire_station=FireStationSummary(
-            id=station_id,
-            name="강남소방서",
-            region="서울",
-            district="강남구",
-        ),
-        allocations=[
-            DonationAllocationSummary(
-                fire_station=FireStationSummary(
-                    id=station_id,
-                    name="강남소방서",
-                    region="서울",
-                    district="강남구",
-                ),
-                amount=Decimal("30000"),
-                allocation_type=AllocationType.PRIMARY,
-            )
-        ],
-        group=None,
-        regular=None,
-        payment=DonationPaymentInfo(
-            method="card",
-            toss_order_id=f"bodam-{donation_id}",
-            toss_payment_key=None,
-        ),
-    )
+    if donor_email is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="EMAIL_REQUIRED")
+
+    user_service = UserService(session)
+    try:
+        user = await user_service.get_user_by_email(donor_email)
+    except UserNotFoundError:
+        return {"donations": [], "total": 0, "page": page, "limit": limit}
+
+    async with _payments_gateway() as gateway:
+        service = DonationService(session, gateway)
+        donations = await service.list_donations_for_user(
+            user.id, limit=limit, offset=(page - 1) * limit
+        )
+    if status_filter is not None:
+        donations = [d for d in donations if d.status == status_filter]
+
     return {
-        "donations": [donation],
-        "total": 1,
+        "donations": [_map_donation_response(d) for d in donations],
+        "total": len(donations),
         "page": page,
         "limit": limit,
     }
 
 
 @router.get("/donations/{donation_id}", response_model=DonationDetailResponse)
-async def get_donation(donation_id: uuid.UUID) -> DonationDetailResponse:
-    now = datetime.now(timezone.utc)
-    return DonationDetailResponse(
-        id=donation_id,
-        mode=DonationMode.SINGLE,
-        amount=Decimal("20000"),
-        currency="KRW",
-        status=DonationStatus.PENDING,
-        message="빠른 쾌유를 바랍니다",
-        is_anonymous=False,
-        needs_receipt=False,
-        created_at=now,
-        completed_at=None,
-        fire_station=FireStationSummary(
-            id=uuid.uuid4(),
-            name="강남소방서",
-            region="서울",
-            district="강남구",
-        ),
-        allocations=[],
-        group=GroupDonationSummary(
-            group_id=None,
-            group_name=None,
-            is_anonymous=False,
-            contact_name=None,
-        ),
-        regular=None,
-        payment=DonationPaymentInfo(
-            method="card",
-            toss_order_id=f"bodam-{donation_id}",
-            toss_payment_key=None,
-        ),
-        receipt_url=None,
-        refund=None,
-    )
+async def get_donation(
+    donation_id: uuid.UUID, session: AsyncSession = Depends(get_session)
+) -> DonationDetailResponse:
+    async with _payments_gateway() as gateway:
+        service = DonationService(session, gateway)
+        try:
+            donation = await service.get_donation(donation_id)
+        except Exception as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="NOT_FOUND") from exc
+
+    response = _map_donation_response(donation)
+    return DonationDetailResponse(**response.model_dump(), receipt_url=donation.receipt_url, refund=None)
 
 
 @router.get("/donations/{donation_id}/receipt")
@@ -289,7 +330,11 @@ async def get_receipt(donation_id: uuid.UUID) -> Response:
 
 
 @router.post("/donations/{donation_id}/refund", status_code=status.HTTP_201_CREATED)
-async def request_refund(donation_id: uuid.UUID, payload: dict) -> dict:
+async def request_refund(
+    donation_id: uuid.UUID,
+    payload: dict,
+    _current_user: User = Depends(get_current_user_with_csrf),
+) -> dict:
     return {
         "refund_id": str(uuid.uuid4()),
         "status": "pending_review",
@@ -298,45 +343,208 @@ async def request_refund(donation_id: uuid.UUID, payload: dict) -> dict:
 
 
 @router.get("/subscriptions")
-async def list_subscriptions() -> dict:
-    now = datetime.now(timezone.utc)
-    subscription = SubscriptionResponse(
-        id=uuid.uuid4(),
-        status=SubscriptionStatus.ACTIVE,
-        cycle=SubscriptionCycle.MONTHLY,
-        amount=Decimal("15000"),
-        currency="KRW",
-        next_billing_at=now,
-        started_at=now,
-        paused_at=None,
-        ended_at=None,
-        fire_stations=[
-            FireStationSummary(
-                id=uuid.uuid4(),
-                name="강남소방서",
-                region="서울",
-                district="강남구",
-            )
-        ],
-        billing_customer_key="customer_123",
-        billing_key="billing_123",
-    )
-    return {"subscriptions": [subscription]}
+async def list_subscriptions(
+    donor_email: str | None = None, session: AsyncSession = Depends(get_session)
+) -> dict:
+    if donor_email is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="EMAIL_REQUIRED")
+
+    user_service = UserService(session)
+    try:
+        user = await user_service.get_user_by_email(donor_email)
+    except UserNotFoundError:
+        return {"subscriptions": []}
+
+    async with _payments_gateway() as gateway:
+        service = DonationService(session, gateway)
+        subscriptions = await service.list_subscriptions_for_user(user.id)
+    return {"subscriptions": [_map_subscription_response(s) for s in subscriptions]}
 
 
 @router.post("/subscriptions/{subscription_id}/pause")
-async def pause_subscription(subscription_id: uuid.UUID) -> dict:
+async def pause_subscription(
+    subscription_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    _current_user: User = Depends(get_current_user_with_csrf),
+) -> dict:
+    async with _payments_gateway() as gateway:
+        service = DonationService(session, gateway)
+        await service.pause_subscription(subscription_id)
     return {"message": "정기 기부가 일시정지되었습니다"}
 
 
 @router.post("/subscriptions/{subscription_id}/resume")
-async def resume_subscription(subscription_id: uuid.UUID) -> dict:
+async def resume_subscription(
+    subscription_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    _current_user: User = Depends(get_current_user_with_csrf),
+) -> dict:
+    async with _payments_gateway() as gateway:
+        service = DonationService(session, gateway)
+        await service.resume_subscription(subscription_id)
     return {"message": "정기 기부가 재개되었습니다"}
 
 
 @router.post("/subscriptions/{subscription_id}/cancel")
-async def cancel_subscription(subscription_id: uuid.UUID) -> dict:
+async def cancel_subscription(
+    subscription_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    _current_user: User = Depends(get_current_user_with_csrf),
+) -> dict:
+    async with _payments_gateway() as gateway:
+        service = DonationService(session, gateway)
+        await service.cancel_subscription(subscription_id)
     return {"message": "정기 기부가 해지되었습니다"}
+
+
+@asynccontextmanager
+async def _payments_gateway() -> PaymentsGateway:
+    secret = os.getenv("TOSS_SECRET_KEY")
+    client = os.getenv("TOSS_CLIENT_KEY")
+    if secret and client:
+        gateway: PaymentsGateway = TossPaymentsClient()
+        try:
+            yield gateway
+        finally:
+            if hasattr(gateway, "close"):
+                await gateway.close()  # type: ignore[attr-defined]
+    else:
+        yield _MockPaymentsGateway()
+
+
+class _MockPaymentsGateway(PaymentsGateway):
+    async def create_checkout(
+        self,
+        *,
+        amount: Decimal,
+        order_id: str,
+        customer_name: str,
+        success_url: str | None,
+        fail_url: str | None,
+        metadata: dict[str, Any] | None = None,
+    ) -> CheckoutSession:
+        return CheckoutSession(order_id=order_id, payment_url=f"https://pay.mock/{order_id}")
+
+    async def confirm_payment(
+        self,
+        *,
+        payment_key: str,
+        order_id: str,
+        amount: Decimal,
+    ) -> PaymentConfirmation:
+        return PaymentConfirmation(
+            payment_key=payment_key,
+            method="card",
+            approved_at=datetime.now(timezone.utc),
+        )
+
+    async def request_refund(
+        self,
+        *,
+        payment_key: str,
+        amount: Decimal,
+        reason: str,
+    ) -> None:
+        return None
+
+    async def create_billing_authorization(
+        self,
+        *,
+        customer_key: str | None,
+        success_url: str | None,
+        fail_url: str | None,
+    ) -> BillingAuthorization:
+        key = customer_key or f"customer_{uuid.uuid4()}"
+        return BillingAuthorization(
+            billing_auth_url=f"https://pay.mock/billing/{key}",
+            customer_key=key,
+            billing_key=None,
+        )
+
+
+def _map_donation_response(donation: Donation) -> DonationResponse:
+    fire_station = donation.fire_station
+    allocations = donation.allocations or []
+    group = donation.group
+    subscription = donation.subscription
+    return DonationResponse(
+        id=donation.id,
+        mode=donation.mode,
+        amount=donation.amount,
+        currency=donation.currency,
+        status=donation.status,
+        message=donation.message,
+        is_anonymous=donation.is_anonymous,
+        needs_receipt=donation.needs_receipt,
+        created_at=donation.created_at,
+        completed_at=donation.completed_at,
+        fire_station=_map_fire_station_summary(fire_station),
+        allocations=[
+            DonationAllocationSummary(
+                fire_station=_map_fire_station_summary(allocation.fire_station),
+                amount=allocation.amount,
+                allocation_type=allocation.allocation_type,
+            )
+            for allocation in allocations
+        ],
+        group=(
+            GroupDonationSummary(
+                group_id=group.id,
+                group_name=group.name,
+                is_anonymous=donation.is_group_anonymous,
+                contact_name=None,
+            )
+            if group
+            else None
+        ),
+        regular=(
+            RegularDonationSummary(
+                subscription_id=subscription.id,
+                status=subscription.status,
+                cycle=subscription.cycle,
+                next_billing_at=subscription.next_billing_at,
+            )
+            if subscription
+            else None
+        ),
+        payment=DonationPaymentInfo(
+            method=donation.payment_method,
+            toss_order_id=donation.toss_order_id,
+            toss_payment_key=donation.toss_payment_key,
+        ),
+    )
+
+
+def _map_fire_station_summary(station: Any) -> FireStationSummary:
+    return FireStationSummary(
+        id=station.id,
+        name=station.name,
+        region=station.region,
+        district=station.district,
+    )
+
+
+def _map_subscription_response(subscription: DonationSubscription) -> SubscriptionResponse:
+    fire_stations = [
+        _map_fire_station_summary(allocation.fire_station)
+        for allocation in subscription.origin_donation.allocations
+    ] or [
+        _map_fire_station_summary(subscription.origin_donation.fire_station)
+    ]
+    return SubscriptionResponse(
+        id=subscription.id,
+        status=subscription.status,
+        cycle=subscription.cycle,
+        amount=subscription.amount,
+        currency=subscription.currency,
+        next_billing_at=subscription.next_billing_at,
+        started_at=subscription.started_at,
+        paused_at=subscription.paused_at,
+        ended_at=subscription.ended_at,
+        fire_stations=fire_stations,
+        billing_customer_key=subscription.toss_customer_key,
+        billing_key=subscription.toss_billing_key,
+    )
 
 
 __all__ = ["router"]

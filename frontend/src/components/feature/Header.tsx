@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import Button from '../base/Button';
+import { apiRequest, ApiError } from '@/lib/api';
 
 export default function Header() {
   const router = useRouter();
@@ -20,9 +21,19 @@ export default function Header() {
   const [isNicknameValid, setIsNicknameValid] = useState(false);
   const [isNicknameChecked, setIsNicknameChecked] = useState(false);
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [isEmailVerified, setIsEmailVerified] = useState(false);
   const [emailVerificationSent, setEmailVerificationSent] = useState(false);
+  const [signupError, setSignupError] = useState('');
+  const [isSigningUp, setIsSigningUp] = useState(false);
   const [showDonationLoginModal, setShowDonationLoginModal] = useState(false);
+
+  // 로그인 폼 상태
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // 로그인 탭 관련 상태 추가
   const [loginTab, setLoginTab] = useState<'individual' | 'group'>('individual');
@@ -204,12 +215,20 @@ export default function Header() {
     setIsSignupModalOpen(true);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await apiRequest('/auth/logout', { method: 'POST' });
+    } catch (error) {
+      console.error('로그아웃 실패:', error);
+    }
+
     setIsLoggedIn(false);
     localStorage.removeItem('isLoggedIn');
     localStorage.removeItem('userType');
     localStorage.removeItem('userNickname');
     localStorage.removeItem('groupNumber');
+    sessionStorage.removeItem('bodam_access_token');
+    sessionStorage.removeItem('bodam_csrf_token');
     setShowUserMenu(false);
     router.push('/');
   };
@@ -284,22 +303,71 @@ export default function Header() {
   };
 
   // 일반 로그인 처리
-  const handleLogin = () => {
-    setIsLoggedIn(true);
-    localStorage.setItem('isLoggedIn', 'true');
-    localStorage.setItem('userType', 'individual');
-    localStorage.setItem('userNickname', '홍길동');
-    localStorage.removeItem('groupNumber');
-    setIsLoginModalOpen(false);
+  const handleLogin = async () => {
+    if (!loginEmail.trim()) {
+      setLoginError('이메일을 입력해주세요.');
+      return;
+    }
 
-    if (loginPurpose === 'donation_history') {
-      setTimeout(() => {
-        handleMemberInquiry();
-      }, 300);
-    } else if (loginPurpose === 'donation') {
-      setTimeout(() => {
-        router.push('/donations');
-      }, 300);
+    if (!loginPassword.trim()) {
+      setLoginError('비밀번호를 입력해주세요.');
+      return;
+    }
+
+    setIsLoggingIn(true);
+    setLoginError('');
+
+    try {
+      const response = await apiRequest<{
+        user: { id: string; email: string; name: string };
+        access_token: string;
+        csrf_token: string;
+      }>('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+      });
+
+      // 로그인 성공
+      setIsLoggedIn(true);
+      localStorage.setItem('isLoggedIn', 'true');
+      localStorage.setItem('userType', 'individual');
+      localStorage.setItem('userNickname', response.user.name);
+      localStorage.setItem('loggedInEmail', response.user.email);
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('bodam_access_token', response.access_token);
+        sessionStorage.setItem('bodam_csrf_token', response.csrf_token);
+      }
+      localStorage.removeItem('groupNumber');
+      setIsLoginModalOpen(false);
+
+      // 입력 필드 초기화
+      setLoginEmail('');
+      setLoginPassword('');
+
+      // 목적에 따른 리다이렉트
+      if (loginPurpose === 'donation_history') {
+        setTimeout(() => {
+          handleMemberInquiry();
+        }, 300);
+      } else if (loginPurpose === 'donation') {
+        setTimeout(() => {
+          router.push('/donations');
+        }, 300);
+      }
+    } catch (error) {
+      if (error instanceof ApiError) {
+        if (error.status === 401) {
+          setLoginError('이메일 혹은 비밀번호가 올바르지 않습니다.');
+        } else if (error.status === 403) {
+          setLoginError('비활성화된 계정입니다. 고객센터로 문의해주세요.');
+        } else {
+          setLoginError(error.message || '로그인 중 문제가 발생했습니다.');
+        }
+      } else {
+        setLoginError('로그인 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.');
+      }
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
@@ -466,19 +534,77 @@ export default function Header() {
     alert('이메일 인증이 완료되었습니다.');
   };
 
-  const handleSignup = () => {
-    if (!isNicknameChecked || !isNicknameValid) {
-      alert('닉네임 중복 확인을 해 주세요.');
+  const handleSignup = async () => {
+    // 유효성 검사
+    if (!nickname.trim()) {
+      setSignupError('닉네임을 입력해주세요.');
       return;
     }
 
-    if (!isEmailVerified) {
-      alert('이메일 인증을 완료해주세요.');
+    if (!email.trim()) {
+      setSignupError('이메일을 입력해주세요.');
       return;
     }
 
-    alert('회원가입이 완료되었습니다.');
-    setIsSignupModalOpen(false);
+    if (!password.trim() || password.length < 8) {
+      setSignupError('비밀번호는 최소 8자 이상이어야 합니다.');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setSignupError('비밀번호가 일치하지 않습니다.');
+      return;
+    }
+
+    setIsSigningUp(true);
+    setSignupError('');
+
+    try {
+      const signupEmail = email;
+      await apiRequest<{
+        user_id: string;
+        email: string;
+        message: string;
+      }>('/auth/signup', {
+        method: 'POST',
+        body: JSON.stringify({
+          email,
+          password,
+          name: nickname,
+          phone: undefined
+        }),
+      });
+
+      // 회원가입 성공
+      alert('회원가입이 완료되었습니다. 로그인해주세요.');
+      setIsSignupModalOpen(false);
+
+      // 필드 초기화
+      setNickname('');
+      setEmail('');
+      setPassword('');
+      setConfirmPassword('');
+      setIsNicknameValid(false);
+      setIsNicknameChecked(false);
+      setIsEmailVerified(false);
+      setEmailVerificationSent(false);
+
+      // 로그인 모달 열기
+      setLoginEmail(signupEmail);
+      setIsLoginModalOpen(true);
+    } catch (error) {
+      if (error instanceof ApiError) {
+        if (error.status === 409) {
+          setSignupError('이미 가입된 이메일입니다. 다른 이메일을 사용해주세요.');
+        } else {
+          setSignupError(error.message || '회원가입 중 문제가 발생했습니다.');
+        }
+      } else {
+        setSignupError('회원가입 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.');
+      }
+    } finally {
+      setIsSigningUp(false);
+    }
   };
 
   const handleMenuClick = (path: string) => {
@@ -1389,6 +1515,8 @@ export default function Header() {
                   </label>
                   <input
                     type="email"
+                    value={loginEmail}
+                    onChange={(e) => setLoginEmail(e.target.value)}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                     placeholder="이메일을 입력하세요"
                   />
@@ -1400,16 +1528,30 @@ export default function Header() {
                   </label>
                   <input
                     type="password"
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleLogin();
+                      }
+                    }}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                     placeholder="비밀번호를 입력하세요"
                   />
                 </div>
 
+                {loginError && (
+                  <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">
+                    {loginError}
+                  </div>
+                )}
+
                 <Button
                   onClick={handleLogin}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                  disabled={isLoggingIn}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-400"
                 >
-                  로그인
+                  {isLoggingIn ? '로그인 중...' : '로그인'}
                 </Button>
 
                 <div className="relative my-6">
@@ -1682,11 +1824,46 @@ export default function Header() {
                 </div>
               )}
 
+              {/* 비밀번호 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  비밀번호
+                </label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="비밀번호를 입력하세요 (최소 8자)"
+                />
+              </div>
+
+              {/* 비밀번호 확인 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  비밀번호 확인
+                </label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="비밀번호를 다시 입력하세요"
+                />
+              </div>
+
+              {signupError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">
+                  {signupError}
+                </div>
+              )}
+
               <Button
                 onClick={handleSignup}
-                className="w-full bg-green-600 hover:bg-green-700 text-white"
+                disabled={isSigningUp}
+                className="w-full bg-green-600 hover:bg-green-700 text-white disabled:bg-gray-400"
               >
-                회원가입
+                {isSigningUp ? '가입 중...' : '회원가입'}
               </Button>
             </div>
 

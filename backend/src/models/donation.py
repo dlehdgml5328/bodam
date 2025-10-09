@@ -6,6 +6,7 @@ import enum
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import (
     Boolean,
@@ -116,7 +117,9 @@ class Donation(Base):
     is_anonymous: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     needs_receipt: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_group_anonymous: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(
+        "metadata", JSON, nullable=True
+    )
     receipt_url: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -132,7 +135,7 @@ class Donation(Base):
         back_populates="donation",
         cascade="all, delete-orphan",
     )
-    subscription = relationship(
+    subscription: Mapped["DonationSubscription | None"] = relationship(
         "DonationSubscription",
         back_populates="origin_donation",
         foreign_keys=[subscription_id],
@@ -217,10 +220,11 @@ class DonationSubscription(Base):
     toss_billing_key: Mapped[str | None] = mapped_column(String(120))
 
     user = relationship("User", backref="donation_subscriptions")
-    origin_donation = relationship(
+    origin_donation: Mapped["Donation | None"] = relationship(
         "Donation",
-        back_populates="subscription",
         foreign_keys=[origin_donation_id],
+        remote_side="Donation.id",
+        uselist=False,
     )
 
     def __repr__(self) -> str:

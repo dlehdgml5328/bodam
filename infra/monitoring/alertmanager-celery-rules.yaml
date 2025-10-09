@@ -1,0 +1,35 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: celery-alerts
+  labels:
+    role: alert-rules
+    part-of: bodam
+spec:
+  groups:
+    - name: celery.rules
+      rules:
+        - alert: CeleryWorkerDown
+          expr: kube_deployment_status_replicas_available{deployment="celery-worker"} < 1
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Celery workers are unavailable"
+            description: |
+              Deployment celery-worker has no available replicas for more than 5 minutes.
+              Investigate worker pods and Redis queue connectivity.
+            runbook_url: https://docs.bodam.example/operations/celery#worker-down
+            slack_channel: ops-celery
+        - alert: CeleryTaskQueueTooLong
+          expr: sum(celery_queue_length{queue="default"}) > 1000
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Celery task queue backlog high"
+            description: |
+              Celery default queue has more than 1000 pending tasks for over 10 minutes.
+              Consider scaling celery-worker deployment or investigating stuck jobs.
+            runbook_url: https://docs.bodam.example/operations/celery#queue-backlog
+            slack_channel: ops-celery

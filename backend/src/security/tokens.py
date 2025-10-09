@@ -18,7 +18,11 @@ def create_access_token(subject: str, *, expires_minutes: int | None = None) -> 
     settings = get_security_settings()
     expiry_minutes = expires_minutes or settings.access_token_ttl_minutes
     expire = datetime.now(timezone.utc) + timedelta(minutes=expiry_minutes)
-    payload = {"sub": subject, "exp": expire}
+    payload = {
+        "sub": subject,
+        "exp": expire,
+        "iat": datetime.now(timezone.utc),
+    }
     return jwt.encode(payload, settings.jwt_signing_key, algorithm=settings.jwt_algorithm)
 
 
@@ -28,6 +32,5 @@ def decode_access_token(token: str) -> dict[str, Any]:
         return jwt.decode(token, settings.jwt_verifying_key, algorithms=[settings.jwt_algorithm])
     except JWTError as exc:  # pragma: no cover - defensive guard
         raise TokenDecodeError("Invalid token") from exc
-
 
 __all__ = ["create_access_token", "decode_access_token", "TokenDecodeError"]

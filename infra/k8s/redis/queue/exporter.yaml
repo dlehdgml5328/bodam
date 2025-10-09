@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-queue-exporter
+  labels:
+    app: redis-queue-exporter
+    component: queue
+    part-of: bodam
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-queue-exporter
+  template:
+    metadata:
+      labels:
+        app: redis-queue-exporter
+        component: queue
+        part-of: bodam
+    spec:
+      containers:
+        - name: redis-exporter
+          image: oliver006/redis_exporter:latest
+          env:
+            - name: REDIS_ADDR
+              value: redis://redis-queue-service:6379
+          ports:
+            - containerPort: 9121
+              name: metrics
+          resources:
+            requests:
+              cpu: "25m"
+              memory: "64Mi"
+            limits:
+              cpu: "100m"
+              memory: "128Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-queue-exporter
+  labels:
+    app: redis-queue-exporter
+    component: queue
+    part-of: bodam
+spec:
+  selector:
+    app: redis-queue-exporter
+  ports:
+    - name: metrics
+      port: 9121
+      targetPort: metrics
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: redis-queue-exporter
+  labels:
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: redis-queue-exporter
+  endpoints:
+    - port: metrics
+      interval: 30s
+  namespaceSelector:
+    matchNames:
+      - default

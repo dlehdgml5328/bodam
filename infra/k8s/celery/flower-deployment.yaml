@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flower
+  labels:
+    app: flower
+    part-of: bodam
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: flower
+  template:
+    metadata:
+      labels:
+        app: flower
+        part-of: bodam
+    spec:
+      containers:
+        - name: flower
+          image: ghcr.io/bodam/backend:latest
+          command:
+            - sh
+            - -c
+            - |
+              celery -A src.worker.celery_app flower \
+                --port=5555 \
+                --url_prefix=/flower \
+                --basic_auth=admin:$FLOWER_PASSWORD
+          env:
+            - name: FLOWER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: flower-auth
+                  key: password
+            - name: CELERY_BROKER_URL
+              value: redis://redis-queue-service:6379/0
+            - name: CELERY_RESULT_BACKEND
+              value: redis://redis-queue-service:6379/1
+          ports:
+            - containerPort: 5555
+              name: http
+         readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - "curl -sfL -u admin:$FLOWER_PASSWORD http://127.0.0.1:5555/flower/api/workers >/dev/null"
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - "curl -sfL -u admin:$FLOWER_PASSWORD http://127.0.0.1:5555/flower/api/workers >/dev/null"
+            initialDelaySeconds: 60
+            periodSeconds: 60
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"

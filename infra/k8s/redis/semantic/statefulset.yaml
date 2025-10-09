@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis-semantic
+  labels:
+    app: redis-semantic
+    component: semantic
+    part-of: bodam
+spec:
+  serviceName: redis-semantic-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-semantic
+  template:
+    metadata:
+      labels:
+        app: redis-semantic
+        component: semantic
+        part-of: bodam
+    spec:
+      containers:
+        - name: redis-stack
+          image: redis/redis-stack:latest
+          args:
+            - "redis-stack-server"
+            - "/etc/redis/redis-stack.conf"
+          ports:
+            - containerPort: 6379
+              name: redis
+            - containerPort: 8001
+              name: insight
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "1Gi"
+            limits:
+              cpu: "1"
+              memory: "2Gi"
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - -h
+                - localhost
+                - -p
+                - "6379"
+                - PING
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: redis
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            failureThreshold: 3
+          volumeMounts:
+            - name: redis-config
+              mountPath: /etc/redis
+            - name: redis-data
+              mountPath: /data
+      volumes:
+        - name: redis-config
+          configMap:
+            name: redis-semantic-config
+            items:
+              - key: redis-stack.conf
+                path: redis-stack.conf
+  volumeClaimTemplates:
+    - metadata:
+        name: redis-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 20Gi
+        storageClassName: standard

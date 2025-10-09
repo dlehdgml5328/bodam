@@ -11,7 +11,7 @@ import redis.asyncio as redis
 
 @dataclass
 class EventBusSettings:
-    redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    redis_url: str = os.getenv("REDIS_CACHE_URL", "redis://localhost:6379/0")
     stream_name: str = os.getenv("EVENT_STREAM", "bodam-events")
 
 
