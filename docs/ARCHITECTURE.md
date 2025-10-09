@@ -2,7 +2,7 @@
 
 > **프로젝트**: 소방관 커피 기부 플랫폼
 > **작성일**: 2025-10-01
-> **기술 스택**: FastAPI + Next.js + PostgreSQL + Celery + Redis
+> **기술 스택**: FastAPI + Next.js + PostgreSQL + Celery + Redis + Redis Stack
 
 ---
 
@@ -68,8 +68,9 @@ graph TB
 
     subgraph "Data Layer"
         F1[(PostgreSQL)]
-        F2[(Redis)]
-        F3[S3/File Store]
+        F2[(Redis Cache/Queue)]
+        F3[(Redis Semantic)]
+        F4[S3/File Store]
     end
 
     A --> B
@@ -100,6 +101,8 @@ graph TB
     D3 --> F2
     D4 --> F2
     D5 --> F2
+    C3 --> F3
+    C4 --> F3
 
     D1 --> E1
     D2 --> E5
@@ -114,7 +117,7 @@ graph TB
     D4 --> F1
     D5 --> F1
 
-    C2 --> F3
+    C2 --> F4
 ```
 
 ---
@@ -393,6 +396,7 @@ graph TB
 
     subgraph "캐싱 Layer"
         N --> Q[Redis Cache]
+        N --> R[Redis Semantic Cache]
         P --> Q
     end
 ```
@@ -402,6 +406,7 @@ graph TB
 - **Collector**: [src/collectors/fire_data_collector.py](../backend/src/collectors/fire_data_collector.py)
 - **Service**: [src/services/fire_station_service.py](../backend/src/services/fire_station_service.py)
 - **Models**: [src/models/fire_station.py](../backend/src/models/fire_station.py)
+- **Semantic Cache**: [infra/k8s/redis/semantic/](../infra/k8s/redis/semantic/) (Redis Stack + Vector 인덱스)
 
 **수집 주기**:
 - 화재 사건: 1시간마다
@@ -692,7 +697,8 @@ backend/
 - `FastAPI`: 고성능 비동기 웹 프레임워크
 - `SQLAlchemy 2.0`: ORM (async 지원)
 - `Celery`: 백그라운드 작업 큐
-- `Redis`: 캐싱 + Celery 브로커
+- `Redis`: 일반 캐시 + Celery 브로커/리절트
+- `Redis Stack`: 시맨틱 캐시(Vector, JSON, RediSearch)
 - `pgvector`: 벡터 검색 (AI 임베딩)
 - `PostGIS`: 지리 데이터 처리
 
@@ -810,7 +816,8 @@ sequenceDiagram
 ## 성능 최적화 전략
 
 ### 1. 캐싱 전략
-- **Redis**: 소방서 목록, 랭킹 데이터 (TTL 1시간)
+- **Redis Cache (일반)**: 소방서 목록, 랭킹 데이터, 근접 검색 결과 (TTL 2~10분, 패턴 기반 무효화)
+- **Redis Stack (시맨틱 캐시)**: 의미 기반 질의(자연어 검색, 추천) 재활용. 벡터 인덱스 + JSON 저장, TTL 30~120분
 - **CDN**: 정적 파일 (이미지, CSS, JS)
 - **DB 쿼리 캐싱**: SQLAlchemy 쿼리 결과 메모이제이션
 

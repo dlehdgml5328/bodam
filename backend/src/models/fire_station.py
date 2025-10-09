@@ -66,7 +66,7 @@ class FireStation(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
-    status_snapshot: Mapped["FireStationStatus" | None] = relationship(
+    status_snapshot: Mapped["FireStationStatus | None"] = relationship(
         "FireStationStatus",
         back_populates="station",
         cascade="all, delete-orphan",
@@ -159,7 +159,7 @@ class FireStationActiveIncident(Base):
     status: Mapped[FireStationStatus] = relationship(
         "FireStationStatus", back_populates="active_incidents"
     )
-    incident: Mapped["NewsContent" | None] = relationship("NewsContent")
+    incident: Mapped["NewsContent | None"] = relationship("NewsContent")
 
     def __repr__(self) -> str:
         return (
@@ -176,4 +176,3 @@ __all__ = [
     "LiveStatus",
     "EmergencyPriority",
 ]
-

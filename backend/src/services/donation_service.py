@@ -5,14 +5,24 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timezone
 from decimal import Decimal
-from typing import Protocol, runtime_checkable
+from typing import Any, Iterable, Protocol, Sequence, runtime_checkable
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.models.donation import Donation, DonationStatus, DonationType
+from src.models.donation import (
+    AllocationType,
+    Donation,
+    DonationAllocation,
+    DonationMode,
+    DonationStatus,
+    DonationSubscription,
+    DonationType,
+    SubscriptionCycle,
+    SubscriptionStatus,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +34,60 @@ class CheckoutSession:
 
 
 @dataclass(frozen=True)
+class BillingAuthorization:
+    billing_auth_url: str | None
+    customer_key: str | None = None
+    billing_key: str | None = None
+
+
+@dataclass(frozen=True)
 class PaymentConfirmation:
     payment_key: str
     method: str
     approved_at: datetime
+
+
+@dataclass(frozen=True)
+class AllocationSpec:
+    fire_station_id: uuid.UUID
+    amount: Decimal
+    allocation_type: AllocationType = AllocationType.PRIMARY
+
+
+@dataclass(frozen=True)
+class DonorInfoSpec:
+    display_name: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    is_anonymous: bool = False
+    needs_receipt: bool = False
+    id_number: str | None = None
+
+
+@dataclass(frozen=True)
+class GroupInfoSpec:
+    group_id: uuid.UUID | None = None
+    group_code: str | None = None
+    group_name: str | None = None
+    contact_name: str | None = None
+    contact_email: str | None = None
+    contact_phone: str | None = None
+    is_anonymous: bool = False
+
+
+@dataclass(frozen=True)
+class RegularDonationSpec:
+    cycle: SubscriptionCycle
+    start_date: date | None = None
+    customer_key: str | None = None
+
+
+@dataclass(frozen=True)
+class CheckoutIntent:
+    donation: Donation
+    subscription: DonationSubscription | None
+    payment_url: str | None
+    billing_auth_url: str | None
 
 
 @runtime_checkable
@@ -38,8 +98,9 @@ class PaymentsGateway(Protocol):
         amount: Decimal,
         order_id: str,
         customer_name: str,
-        success_url: str,
-        fail_url: str,
+        success_url: str | None,
+        fail_url: str | None,
+        metadata: dict[str, Any] | None = None,
     ) -> CheckoutSession: ...
 
     async def confirm_payment(
@@ -58,9 +119,21 @@ class PaymentsGateway(Protocol):
         reason: str,
     ) -> None: ...
 
+    async def create_billing_authorization(
+        self,
+        *,
+        customer_key: str | None,
+        success_url: str | None,
+        fail_url: str | None,
+    ) -> BillingAuthorization: ...
+
 
 class DonationNotFoundError(Exception):
     """Raised when a donation cannot be located."""
+
+
+class SubscriptionNotFoundError(Exception):
+    """Raised when a subscription cannot be located."""
 
 
 class DonationService:
@@ -68,41 +141,107 @@ class DonationService:
         self._session = session
         self._payments = payments
 
-    async def create_donation(
+    async def prepare_donation_checkout(
         self,
         *,
         user_id: uuid.UUID,
-        fire_station_id: uuid.UUID,
+        mode: DonationMode,
         amount: Decimal,
-        donation_type: DonationType,
-        success_url: str,
-        fail_url: str,
-        frequency: str | None = None,
-        message: str | None = None,
-        is_anonymous: bool = False,
-    ) -> tuple[Donation, CheckoutSession]:
+        currency: str,
+        fire_station_id: uuid.UUID | None,
+        allocations: Sequence[AllocationSpec] | None,
+        donor: DonorInfoSpec,
+        group: GroupInfoSpec | None,
+        regular: RegularDonationSpec | None,
+        message: str | None,
+        metadata: dict[str, Any] | None,
+        success_url: str | None,
+        fail_url: str | None,
+    ) -> CheckoutIntent:
+        if mode == DonationMode.SINGLE and fire_station_id is None:
+            raise ValueError("Single mode donation requires fire_station_id")
+        if mode == DonationMode.MULTIPLE:
+            if not allocations:
+                raise ValueError("Multiple mode donation requires allocations")
+            if not any(a.amount > 0 for a in allocations):
+                raise ValueError("At least one allocation must have a positive amount")
+
+        primary_station_id = fire_station_id
+        if mode == DonationMode.MULTIPLE and allocations:
+            primary_station_id = _resolve_primary_station_id(allocations)
+
         order_id = f"bodam-{uuid.uuid4()}"
         donation = Donation(
             user_id=user_id,
-            fire_station_id=fire_station_id,
+            fire_station_id=primary_station_id,
+            group_id=group.group_id if (group and group.group_id) else None,
+            mode=mode,
             amount=amount,
-            type=donation_type,
-            frequency=frequency,
+            currency=currency,
+            type=DonationType.RECURRING if (regular and regular.cycle) else DonationType.ONE_TIME,
             message=message,
-            is_anonymous=is_anonymous,
+            donor_display_name=donor.display_name,
+            is_anonymous=donor.is_anonymous,
+            needs_receipt=donor.needs_receipt,
+            is_group_anonymous=group.is_anonymous if group else False,
+            metadata_json=metadata,
             toss_order_id=order_id,
         )
         self._session.add(donation)
+
+        if allocations:
+            for spec in allocations:
+                allocation = DonationAllocation(
+                    donation=donation,
+                    fire_station_id=spec.fire_station_id,
+                    amount=spec.amount,
+                    allocation_type=spec.allocation_type,
+                )
+                self._session.add(allocation)
+
+        subscription: DonationSubscription | None = None
+        billing_auth_url: str | None = None
+        if regular and regular.cycle:
+            subscription = DonationSubscription(
+                user_id=user_id,
+                origin_donation=donation,
+                status=SubscriptionStatus.ACTIVE,
+                cycle=regular.cycle,
+                amount=amount,
+                currency=currency,
+                next_billing_at=_combine_date_with_utc(regular.start_date),
+                toss_customer_key=regular.customer_key,
+            )
+            self._session.add(subscription)
+            donation.subscription = subscription
+
+            billing_auth_url = await self._maybe_create_billing_authorization(
+                subscription=subscription,
+                success_url=success_url,
+                fail_url=fail_url,
+            )
+
+        checkout_session: CheckoutSession | None = None
+        if billing_auth_url is None:
+            checkout_session = await self._payments.create_checkout(
+                amount=amount,
+                order_id=order_id,
+                customer_name=donor.display_name or str(user_id),
+                success_url=success_url,
+                fail_url=fail_url,
+                metadata={}
+                if metadata is None
+                else metadata,
+            )
+
         await self._session.flush()
 
-        checkout = await self._payments.create_checkout(
-            amount=amount,
-            order_id=order_id,
-            customer_name=str(user_id),
-            success_url=success_url,
-            fail_url=fail_url,
+        return CheckoutIntent(
+            donation=donation,
+            subscription=subscription,
+            payment_url=checkout_session.payment_url if checkout_session else None,
+            billing_auth_url=billing_auth_url,
         )
-        return donation, checkout
 
     async def confirm_donation(
         self,
@@ -166,11 +305,93 @@ class DonationService:
         await self._session.flush()
         return donation
 
+    async def list_subscriptions_for_user(
+        self, user_id: uuid.UUID, *, limit: int = 20, offset: int = 0
+    ) -> list[DonationSubscription]:
+        result = await self._session.execute(
+            select(DonationSubscription)
+            .where(DonationSubscription.user_id == user_id)
+            .order_by(DonationSubscription.started_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        return list(result.scalars())
+
+    async def pause_subscription(self, subscription_id: uuid.UUID) -> DonationSubscription:
+        subscription = await self._session.get(DonationSubscription, subscription_id)
+        if subscription is None:
+            raise SubscriptionNotFoundError(str(subscription_id))
+        subscription.status = SubscriptionStatus.PAUSED
+        subscription.paused_at = datetime.now(timezone.utc)
+        await self._session.flush()
+        return subscription
+
+    async def resume_subscription(self, subscription_id: uuid.UUID) -> DonationSubscription:
+        subscription = await self._session.get(DonationSubscription, subscription_id)
+        if subscription is None:
+            raise SubscriptionNotFoundError(str(subscription_id))
+        subscription.status = SubscriptionStatus.ACTIVE
+        subscription.paused_at = None
+        await self._session.flush()
+        return subscription
+
+    async def cancel_subscription(self, subscription_id: uuid.UUID) -> DonationSubscription:
+        subscription = await self._session.get(DonationSubscription, subscription_id)
+        if subscription is None:
+            raise SubscriptionNotFoundError(str(subscription_id))
+        subscription.status = SubscriptionStatus.CANCELLED
+        subscription.ended_at = datetime.now(timezone.utc)
+        await self._session.flush()
+        return subscription
+
+    async def _maybe_create_billing_authorization(
+        self,
+        *,
+        subscription: DonationSubscription,
+        success_url: str | None,
+        fail_url: str | None,
+    ) -> str | None:
+        if not hasattr(self._payments, "create_billing_authorization"):
+            return None
+
+        billing = await self._payments.create_billing_authorization(
+            customer_key=subscription.toss_customer_key,
+            success_url=success_url,
+            fail_url=fail_url,
+        )
+        if billing.customer_key and not subscription.toss_customer_key:
+            subscription.toss_customer_key = billing.customer_key
+        if billing.billing_key:
+            subscription.toss_billing_key = billing.billing_key
+        return billing.billing_auth_url
+
+
+def _resolve_primary_station_id(allocations: Iterable[AllocationSpec]) -> uuid.UUID:
+    for spec in allocations:
+        if spec.allocation_type == AllocationType.PRIMARY:
+            return spec.fire_station_id
+    # fallback: first allocation entry
+    first = next(iter(allocations))
+    return first.fire_station_id
+
+
+def _combine_date_with_utc(value: date | None) -> datetime | None:
+    if value is None:
+        return None
+    return datetime.combine(value, time.min, tzinfo=timezone.utc)
+
 
 __all__ = [
     "DonationService",
     "DonationNotFoundError",
+    "SubscriptionNotFoundError",
     "PaymentsGateway",
     "CheckoutSession",
+    "BillingAuthorization",
     "PaymentConfirmation",
+    "AllocationSpec",
+    "DonorInfoSpec",
+    "GroupInfoSpec",
+    "RegularDonationSpec",
+    "CheckoutIntent",
 ]

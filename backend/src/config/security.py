@@ -29,7 +29,8 @@ class SecuritySettings:
     jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
     jwt_private_key: str | None = os.getenv("JWT_PRIVATE_KEY")
     jwt_public_key: str | None = os.getenv("JWT_PUBLIC_KEY")
-    access_token_ttl_minutes: int = int(os.getenv("ACCESS_TOKEN_TTL", "60"))
+    access_token_ttl_minutes: int = int(os.getenv("ACCESS_TOKEN_TTL", "15"))  # 15분 (SECURITY.md 기준)
+    refresh_token_ttl_minutes: int = int(os.getenv("REFRESH_TOKEN_TTL", "10080"))  # 7일 = 10080분
     password_reset_token_minutes: int = int(os.getenv("PASSWORD_RESET_TOKEN_TTL", "30"))
 
     def __post_init__(self) -> None:

@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-beat
+  labels:
+    app: celery-beat
+    part-of: bodam
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: celery-beat
+  template:
+    metadata:
+      labels:
+        app: celery-beat
+        part-of: bodam
+    spec:
+      containers:
+        - name: beat
+          image: ghcr.io/bodam/backend:latest
+          command:
+            - sh
+            - -c
+            - "celery -A src.worker.celery_app beat --loglevel=info"
+          env:
+            - name: CELERY_BROKER_URL
+              value: redis://redis-queue-service:6379/0
+            - name: CELERY_RESULT_BACKEND
+              value: redis://redis-queue-service:6379/1
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: bodam-secrets
+                  key: database_url
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "300m"
+              memory: "512Mi"
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - "test -f /tmp/celerybeat.pid"
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - "pgrep -f 'celery beat'"
+            initialDelaySeconds: 60
+            periodSeconds: 60

@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import Card from '@/components/base/Card';
 import Button from '@/components/base/Button';
+import { apiRequest, ApiError } from '@/lib/api';
 
 export default function MyPage() {
   const router = useRouter();
@@ -51,6 +52,32 @@ export default function MyPage() {
 
   // 철회/반환 모달 상태 추가
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+
+  // API 데이터 상태
+  const [donationHistory, setDonationHistory] = useState<any[]>([]);
+  const [regularDonations, setRegularDonations] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // 월별 통계 계산
+  const monthlyStats = donationHistory.reduce((acc: any[], donation) => {
+    const month = new Date(donation.created_at || donation.date).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long' });
+    const existing = acc.find(s => s.month === month);
+
+    if (existing) {
+      existing.amount += donation.amount;
+      existing.count += 1;
+      existing.cups += Math.floor(donation.amount / 3000);
+    } else {
+      acc.push({
+        month,
+        amount: donation.amount,
+        count: 1,
+        cups: Math.floor(donation.amount / 3000)
+      });
+    }
+
+    return acc;
+  }, []).slice(0, 10);
 
   // URL 파라미터 확인하여 기부내역 모달 표시
   useEffect(() => {
@@ -123,224 +150,93 @@ export default function MyPage() {
     { value: 'other', label: '기타' }
   ];
 
-  // 사용자 정보 (실제로는 context나 store에서 가져와야 함)
+  // 사용자 정보 (API에서 계산)
   const [userInfo, setUserInfo] = useState({
-    name: '홍길동',
-    nickname: '소방이',
-    email: 'hong@example.com',
-    phone: '010-1234-5678',
-    joinDate: '2024-01-15',
-    totalDonations: 485000,
-    totalCups: 162,
-    totalCount: 23,
-    rank: 42,
-    level: 'Gold',
-    badge: '🥉',
+    name: '',
+    nickname: '',
+    email: '',
+    phone: '',
+    joinDate: '',
+    totalDonations: 0,
+    totalCups: 0,
+    totalCount: 0,
+    rank: 0,
+    level: '',
+    badge: '',
     profileImage: localStorage.getItem('userProfileImage') || ''
   });
 
-  // 기부 내역 데이터 (수정된 데이터로 변경)
-  const donationHistory = [
-    {
-      id: 1,
-      date: new Date(2024, 11, 15),
-      amount: 30000,
-      fireStation: '서울강남소방서',
-      status: 'completed',
-      receiptIssued: true,
-      message: '항상 고생이 많으십니다. 감사합니다!',
-      donorName: '홍길동',
-      donorCategory: '개인',
-      donationType: 'individual',
-      verificationId: 'DON20241215001'
-    },
-    {
-      id: 2,
-      date: new Date(2024, 11, 10),
-      amount: 15000,
-      fireStation: '서울서초소방서',
-      status: 'completed',
-      receiptIssued: true,
-      message: '추운 겨울 따뜻한 커피 드세요',
-      donorName: '홍길동',
-      donorCategory: '개인',
-      donationType: 'individual',
-      verificationId: 'DON20241210001'
-    },
-    {
-      id: 3,
-      date: new Date(2024, 10, 28),
-      amount: 60000,
-      fireStation: '부산해운대소방서',
-      status: 'completed',
-      receiptIssued: false,
-      message: '',
-      donorName: '사랑나눔재단 (단체)',
-      donorCategory: '단체',
-      donationType: 'group',
-      verificationId: 'DON20241028001'
-    },
-    {
-      id: 4,
-      date: new Date(2024, 10, 20),
-      amount: 45000,
-      fireStation: '대구중부소방서',
-      status: 'completed',
-      receiptIssued: true,
-      message: '화재 진압 고생하셨습니다',
-      donorName: '홍길동',
-      donorCategory: '개인',
-      donationType: 'individual',
-      verificationId: 'DON20241020001'
-    },
-    {
-      id: 5,
-      date: new Date(2024, 10, 15),
-      amount: 30000,
-      fireStation: '인천용산소방서',
-      status: 'pending',
-      receiptIssued: false,
-      message: '안전을 위해 애쓰시는 모습 감사드립니다',
-      donorName: '희망기업 (기업·기관)',
-      donorCategory: '기업·기관',
-      donationType: 'company',
-      verificationId: 'DON20241015001'
-    },
-    {
-      id: 6,
-      date: new Date(2024, 9, 25),
-      amount: 75000,
-      fireStation: '광주서부소방서',
-      status: 'completed',
-      receiptIssued: true,
-      message: '',
-      donorName: '홍길동',
-      donorCategory: '개인',
-      donationType: 'individual',
-      verificationId: 'DON20240925001'
-    },
-    {
-      id: 7,
-      date: new Date(2024, 9, 18),
-      amount: 15000,
-      fireStation: '대전동부소방서',
-      status: 'completed',
-      receiptIssued: true,
-      message: '소방관님들 건강하세요',
-      donorName: '시민연대 (단체)',
-      donorCategory: '단체',
-      donationType: 'group',
-      verificationId: 'DON20240918001'
-    },
-    {
-      id: 8,
-      date: new Date(2024, 9, 10),
-      amount: 90000,
-      fireStation: '서울마포소방서',
-      status: 'completed',
-      receiptIssued: false,
-      message: '위험한 상황에서도 시민을 보호해주셔서 감사합니다',
-      donorName: '홍길동',
-      donorCategory: '개인',
-      donationType: 'individual',
-      verificationId: 'DON20240910001'
-    },
-    {
-      id: 9,
-      date: new Date(2024, 8, 30),
-      amount: 30000,
-      fireStation: '부산중부소방서',
-      status: 'completed',
-      receiptIssued: true,
-      message: '',
-      donorName: '테크솔루션 (기업·기관)',
-      donorCategory: '기업·기관',
-      donationType: 'company',
-      verificationId: 'DON20240830001'
-    },
-    {
-      id: 10,
-      date: new Date(2024, 8, 22),
-      amount: 45000,
-      fireStation: '서울강서소방서',
-      status: 'completed',
-      receiptIssued: true,
-      message: '24시간 근무하시는 모든 소방관분들께 감사드립니다',
-      donorName: '홍길동',
-      donorCategory: '개인',
-      donationType: 'individual',
-      verificationId: 'DON20240822001'
-    },
-    {
-      id: 11,
-      date: new Date(2024, 8, 15),
-      amount: 60000,
-      fireStation: '대구동부소방서',
-      status: 'completed',
-      receiptIssued: false,
-      message: '더운 여름 고생하셨습니다',
-      donorName: '복지센터 (단체)',
-      donorCategory: '단체',
-      donationType: 'group',
-      verificationId: 'DON20240815001'
-    },
-    {
-      id: 12,
-      date: new Date(2024, 7, 28),
-      amount: 15000,
-      fireStation: '인천남부소방서',
-      status: 'completed',
-      receiptIssued: true,
-      message: '',
-      donorName: '홍길동',
-      donorCategory: '개인',
-      donationType: 'individual',
-      verificationId: 'DON20240728001'
-    }
-  ].sort((a, b) => b.date.getTime() - a.date.getTime());
+  // 데이터 로딩 - API에서 기부 내역과 정기 기부 가져오기
+  useEffect(() => {
+    const fetchData = async () => {
+      setIsLoading(true);
+      try {
+        // 로그인한 사용자 이메일 가져오기
+        const userEmail = localStorage.getItem('loggedInEmail');
 
-  // 정기 기부 내역 데이터 추가
-  const regularDonations = [
-    {
-      id: 1,
-      fireStation: '서울강남소방서',
-      amount: 30000,
-      cycle: 'monthly',
-      startDate: new Date(2024, 10, 15),
-      nextPaymentDate: new Date(2025, 0, 15),
-      status: 'active',
-      totalCount: 3,
-      totalAmount: 90000,
-      lastPaymentDate: new Date(2024, 11, 15),
-      createdDate: new Date(2024, 10, 15)
-    },
-    {
-      id: 2,
-      fireStation: '부산해운대소방서',
-      amount: 15000,
-      cycle: 'quarterly',
-      startDate: new Date(2024, 8, 1),
-      nextPaymentDate: new Date(2025, 2, 1),
-      status: 'active',
-      totalCount: 2,
-      totalAmount: 30000,
-      lastPaymentDate: new Date(2024, 11, 1),
-      createdDate: new Date(2024, 8, 1)
-    },
-    {
-      id: 3,
-      fireStation: '대구중부소방서',
-      amount: 60000,
-      cycle: 'yearly',
-      startDate: new Date(2024, 5, 10),
-      nextPaymentDate: new Date(2025, 5, 10),
-      status: 'paused',
-      totalCount: 1,
-      totalAmount: 60000,
-      lastPaymentDate: new Date(2024, 5, 10),
-      createdDate: new Date(2024, 5, 10)
-    }
-  ];
+        if (!userEmail) {
+          console.warn('로그인 정보가 없습니다. 로그인 페이지로 이동해주세요.');
+          setDonationHistory([]);
+          setRegularDonations([]);
+          return;
+        }
+
+        // 기부 내역 가져오기
+        const donations = await apiRequest<any>(`/donations?donor_email=${encodeURIComponent(userEmail)}`, {
+          method: 'GET',
+        });
+        const donationList = donations.items || [];
+        setDonationHistory(donationList);
+
+        // 정기 기부 가져오기
+        const subscriptions = await apiRequest<any>(`/subscriptions?donor_email=${encodeURIComponent(userEmail)}`, {
+          method: 'GET',
+        });
+        setRegularDonations(subscriptions.items || []);
+
+        // 통계 계산
+        const totalAmount = donationList.reduce((sum: number, d: any) => sum + (d.amount || 0), 0);
+        const totalCups = Math.floor(totalAmount / 3000);
+        const totalCount = donationList.length;
+
+        setUserInfo(prev => ({
+          ...prev,
+          totalDonations: totalAmount,
+          totalCups: totalCups,
+          totalCount: totalCount,
+        }));
+      } catch (error) {
+        console.error('데이터 로딩 실패:', error);
+        setDonationHistory([]);
+        setRegularDonations([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  // 사용자 정보 로딩
+  useEffect(() => {
+    const userNickname = localStorage.getItem('userNickname') || '소방이';
+    const userEmail = localStorage.getItem('loggedInEmail') || '';
+
+    setEditForm(prev => ({
+      ...prev,
+      name: userNickname,
+      nickname: userNickname,
+      email: userEmail,
+    }));
+
+    setUserInfo(prev => ({
+      ...prev,
+      name: userNickname,
+      nickname: userNickname,
+      email: userEmail,
+    }));
+  }, []);
+
 
   // 기존 코드에서 가져온 핸들러 및 상태
   const handleDonationClick = (donation: any) => {
@@ -451,19 +347,6 @@ export default function MyPage() {
     alert(`${regularDonation.fireStation}의 정기 기부가 일시정지되었습니다.`);
   };
 
-  // 월별 기부 통계 데이터
-  const monthlyStats = [
-    { month: '2024년 12월', amount: 45000, count: 3, cups: 15 },
-    { month: '2024년 11월', amount: 60000, count: 4, cups: 20 },
-    { month: '2024년 10월', amount: 30000, count: 2, cups: 10 },
-    { month: '2024년 09월', amount: 75000, count: 5, cups: 25 },
-    { month: '2024년 08월', amount: 90000, count: 6, cups: 30 },
-    { month: '2024년 07월', amount: 45000, count: 3, cups: 15 },
-    { month: '2024년 06월', amount: 60000, count: 4, cups: 20 },
-    { month: '2024년 05월', amount: 30000, count: 2, cups: 10 },
-    { month: '2024년 04월', amount: 75000, count: 5, cups: 25 },
-    { month: '2024년 03월', amount: 90000, count: 6, cups: 30 }
-  ];
 
   const getLevelBadgeColor = (level: string) => {
     switch (level) {

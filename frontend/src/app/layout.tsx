@@ -2,8 +2,11 @@ import type { Metadata } from 'next';
 import '../styles/globals.css';
 
 export const metadata: Metadata = {
-  title: '소방관 기부 플랫폼',
+  title: '보담 - 소방관 기부 플랫폼',
   description: '소방관들에게 따뜻한 커피와 마음을 전해주세요',
+  icons: {
+    icon: 'https://static.readdy.ai/image/a6fb1ef394d2037130d9baf3b5296fbe/f110ca539031b1c7ee3df39fb987a51f.png',
+  },
 };
 
 export default function RootLayout({
@@ -14,7 +17,6 @@ export default function RootLayout({
   return (
     <html lang="ko">
       <head>
-        <link rel="icon" href="/favicon.ico" />
         <link
           rel="stylesheet"
           href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"

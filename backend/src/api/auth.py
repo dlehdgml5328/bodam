@@ -12,8 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config.security import get_security_settings
 from src.database.connection import get_session
+from src.models.user import User
 from src.security.passwords import hash_password, verify_password
-from src.security.tokens import create_access_token
+from src.security.session import (
+    clear_session_cookies,
+    get_current_user,
+    issue_session_tokens,
+)
 from src.services.password_reset_service import (
     PasswordResetService,
     PasswordResetTokenExpiredError,
@@ -54,6 +59,7 @@ class LoginResponse(BaseModel):
 
     user: UserInfo
     access_token: str
+    csrf_token: str
 
 
 class PasswordResetRequest(BaseModel):
@@ -105,40 +111,28 @@ async def login(
     if not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="INVALID_CREDENTIALS")
 
-    token = create_access_token(str(user.id))
-    settings = get_security_settings()
-    response.set_cookie(
-        key="bodam_session",
-        value=token,
-        httponly=True,
-        secure=settings.cookie_secure,
-        samesite=settings.cookie_samesite,
-        domain=settings.cookie_domain or None,
-        max_age=settings.access_token_ttl_minutes * 60,
-    )
+    tokens = issue_session_tokens(response, user)
 
     return LoginResponse(
         user=LoginResponse.UserInfo(id=user.id, email=user.email, name=user.name),
-        access_token=token,
+        access_token=tokens["access_token"],
+        csrf_token=tokens["csrf_token"],
     )
 
 
 @router.post("/logout")
 async def logout(response: Response) -> JSONResponse:
-    settings = get_security_settings()
-    response.delete_cookie(
-        key="bodam_session",
-        domain=settings.cookie_domain or None,
-        samesite=settings.cookie_samesite,
-        secure=settings.cookie_secure,
-    )
-    headers = {"Set-Cookie": "bodam_session=; HttpOnly; Path=/; Max-Age=0"}
-    return JSONResponse(content={"message": "ok"}, headers=headers)
+    clear_session_cookies(response)
+    return JSONResponse(content={"message": "ok"})
 
 
 @router.post("/refresh")
-async def refresh() -> dict:
-    return {"access_token": create_access_token(str(uuid.uuid4()))}
+async def refresh(
+    response: Response,
+    current_user: User = Depends(get_current_user),
+) -> dict[str, str]:
+    tokens = issue_session_tokens(response, current_user)
+    return tokens
 
 
 @router.post("/password-reset/request")

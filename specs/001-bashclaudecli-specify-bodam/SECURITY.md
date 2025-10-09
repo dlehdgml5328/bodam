@@ -32,32 +32,40 @@ rules:
 
 ## 🔑 인증 및 인가 (Authentication & Authorization)
 
-### JWT 토큰 관리
+### JWT & CSRF 토큰 관리
 ```python
-# 토큰 생성 (backend/src/auth/jwt.py)
-class JWTManager:
-    def create_access_token(self, user_id: str) -> str:
-        payload = {
-            "sub": user_id,
-            "exp": datetime.utcnow() + timedelta(minutes=15),
-            "iat": datetime.utcnow(),
-            "type": "access"
-        }
-        return jwt.encode(payload, self.secret_key, algorithm="HS256")
+# backend/src/security/session.py
+SESSION_COOKIE_NAME = "bodam_session"
+CSRF_COOKIE_NAME = "bodam_csrf"
+CSRF_HEADER_NAME = "X-CSRF-Token"
 
-    def create_refresh_token(self, user_id: str) -> str:
-        payload = {
-            "sub": user_id,
-            "exp": datetime.utcnow() + timedelta(days=7),
-            "type": "refresh"
-        }
-        return jwt.encode(payload, self.secret_key, algorithm="HS256")
+def issue_session_tokens(response: Response, user: User) -> dict[str, str]:
+    access_token = create_access_token(str(user.id))
+    csrf_token = secrets.token_urlsafe(32)
+
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=access_token,
+        httponly=True,
+        samesite=settings.cookie_samesite,
+        secure=settings.cookie_secure,
+    )
+    response.set_cookie(
+        key=CSRF_COOKIE_NAME,
+        value=csrf_token,
+        httponly=False,
+        samesite=settings.cookie_samesite,
+        secure=settings.cookie_secure,
+    )
+    return {"access_token": access_token, "csrf_token": csrf_token}
 ```
 
-### 토큰 저장 방식
-- **Access Token**: HttpOnly 쿠키 (15분 만료)
-- **Refresh Token**: Secure HttpOnly 쿠키 (7일 만료)
-- **CSRF 보호**: SameSite=Lax 설정
+### 토큰 저장 및 전달 방식
+- **Access Token**: HttpOnly 쿠키(`bodam_session`) + 응답 JSON 동시 발급 (헤더 전송용)
+- **CSRF Token**: Non-HttpOnly 쿠키(`bodam_csrf`)와 `X-CSRF-Token` 헤더 일치 여부 검증 (Double Submit)
+- **로그아웃**: `bodam_session`, `bodam_csrf` 동시 삭제
+- **결제 API**: `Authorization: Bearer <access_token>` 헤더 필수
+- **일반 API**: 쿠키 기반 인증 + CSRF 검사 (SameSite 기본값 `Lax`)
 
 ### OAuth2 소셜 로그인 보안
 ```python

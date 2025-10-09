@@ -64,10 +64,16 @@ export default function LoginPage() {
         const data = await apiRequest<{
           user: { id: string; email: string; name: string };
           access_token: string;
+          csrf_token: string;
         }>('/auth/login', {
           method: 'POST',
           body: JSON.stringify({ email, password }),
         });
+
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('bodam_access_token', data.access_token);
+          sessionStorage.setItem('bodam_csrf_token', data.csrf_token);
+        }
 
         persistLoginState({ email: data.user.email, name: data.user.name, provider: 'password' });
         router.push(redirectTo);
