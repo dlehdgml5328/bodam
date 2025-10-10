@@ -57,7 +57,8 @@ function renderTable() {
     return;
   }
 
-  tbody.innerHTML = displayedIncidents.map(inc => createTableRow(inc)).join('');
+  // 배열을 역순으로 렌더링 (배열 끝이 테이블 위로, 배열 시작이 테이블 아래로)
+  tbody.innerHTML = displayedIncidents.slice().reverse().map(inc => createTableRow(inc)).join('');
 
   // 최근 갱신 시간 업데이트
   document.getElementById('last-updated').textContent = new Date().toLocaleString('ko-KR');
@@ -71,11 +72,11 @@ async function rotateIncidents() {
     return;
   }
 
-  // 초기 10개 표시
-  displayedIncidents = incidents.slice(0, 10);
-  currentIndex = 9;
+  // 초기 5개 표시
+  displayedIncidents = incidents.slice(0, 5);
+  currentIndex = 4;
   renderTable();
-  console.log(`[${new Date().toISOString()}] Initial 10 incidents displayed`);
+  console.log(`[${new Date().toISOString()}] Initial 5 incidents displayed`);
 
   // 10초마다 1개씩 추가 (테스트용, 프로덕션에서는 300000ms = 5분)
   const rotationInterval = 10000; // 10초 (개발용)
@@ -84,12 +85,12 @@ async function rotateIncidents() {
   setInterval(() => {
     currentIndex = (currentIndex + 1) % incidents.length;
 
-    // 새 데이터 추가 (중복 방지)
+    // 새 데이터를 상단에 추가 (중복 방지)
     const newIncident = incidents[currentIndex];
     if (!displayedIncidents.find(inc => inc.id === newIncident.id)) {
-      displayedIncidents.push(newIncident);
+      displayedIncidents.unshift(newIncident); // 배열 앞에 추가 (상단에 표시)
       renderTable();
-      console.log(`[${new Date().toISOString()}] New incident added: ${newIncident.fireName} (Total: ${displayedIncidents.length})`);
+      console.log(`[${new Date().toISOString()}] New incident added at top: ${newIncident.fireName} (Total: ${displayedIncidents.length})`);
     }
   }, rotationInterval);
 
