@@ -15,30 +15,43 @@
   <main>
     <section class="info-section">
       <div class="info-card">
-        <h3>📍 현재 표시 중인 출동 건</h3>
-        <p class="note">10초마다 다음 데이터로 자동 갱신됩니다 (총 30개 순환)</p>
+        <h3>📍 화재출동 현황</h3>
+        <p class="note">초기 10건 표시 → 10초마다 1건씩 추가 (총 30건)</p>
+        <p class="last-update">최근 갱신: <span id="last-updated">-</span></p>
       </div>
     </section>
 
-    <section class="current-incident-section">
-      <div id="current-incident">
-        <!-- JavaScript로 동적 생성 -->
-        <div class="loading">
-          <p>데이터 로딩 중...</p>
-        </div>
-      </div>
+    <section class="table-section">
+      <table id="incidents-table">
+        <thead>
+          <tr>
+            <th>소방서</th>
+            <th>발생일시</th>
+            <th>주소</th>
+            <th>상태</th>
+            <th>진행상황</th>
+            <th>사상자</th>
+            <th>피해액</th>
+          </tr>
+        </thead>
+        <tbody id="incidents-tbody">
+          <!-- JavaScript로 동적 생성 -->
+          <tr>
+            <td colspan="7" class="loading-row">데이터 로딩 중...</td>
+          </tr>
+        </tbody>
+      </table>
     </section>
 
     <section class="crawler-info">
       <h3>🤖 크롤링 포인트</h3>
       <ul>
-        <li>크롤링 대상: <code>#current-incident > .incident</code></li>
-        <li>ID: <code>data-id</code> 속성</li>
-        <li>위도/경도: <code>data-lat</code>, <code>data-lng</code> 속성</li>
-        <li>소방서명: <code>.fire-name</code> 텍스트</li>
-        <li>주소: <code>.address</code> 텍스트</li>
-        <li>발생시간: <code>.time</code> 텍스트</li>
-        <li>진행상황: <code>.progress</code> 텍스트</li>
+        <li>크롤링 대상: <code>table#incidents-table tbody tr</code></li>
+        <li>각 행(<code>tr</code>)의 <code>data-*</code> 속성에서 정보 추출</li>
+        <li>ID: <code>data-id</code></li>
+        <li>위도/경도: <code>data-lat</code>, <code>data-lng</code></li>
+        <li>소방서명: 첫 번째 <code>td</code></li>
+        <li>발생일시: 두 번째 <code>td</code></li>
       </ul>
     </section>
   </main>
