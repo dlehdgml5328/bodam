@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>소방 출동 현황 - Mock Crawling Site</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header>
+    <h1>🚒 실시간 소방 출동 현황</h1>
+    <p class="subtitle">크롤링 테스트용 Mock 데이터 사이트 (30개 데이터 순환 표시)</p>
+  </header>
+
+  <main>
+    <section class="info-section">
+      <div class="info-card">
+        <h3>📍 현재 표시 중인 출동 건</h3>
+        <p class="note">10초마다 다음 데이터로 자동 갱신됩니다 (총 30개 순환)</p>
+      </div>
+    </section>
+
+    <section class="current-incident-section">
+      <div id="current-incident">
+        <!-- JavaScript로 동적 생성 -->
+        <div class="loading">
+          <p>데이터 로딩 중...</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="crawler-info">
+      <h3>🤖 크롤링 포인트</h3>
+      <ul>
+        <li>크롤링 대상: <code>#current-incident > .incident</code></li>
+        <li>ID: <code>data-id</code> 속성</li>
+        <li>위도/경도: <code>data-lat</code>, <code>data-lng</code> 속성</li>
+        <li>소방서명: <code>.fire-name</code> 텍스트</li>
+        <li>주소: <code>.address</code> 텍스트</li>
+        <li>발생시간: <code>.time</code> 텍스트</li>
+        <li>진행상황: <code>.progress</code> 텍스트</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer>
+    <p>© 2025 보담(BoDam) - Mock Crawling Site</p>
+    <p>이 사이트는 개발 및 테스트 목적으로만 사용됩니다</p>
+    <p>GitHub Pages: <a href="https://github.com/donghee/mock-fire-station-site" target="_blank">Repository</a></p>
+  </footer>
+
+  <script src="js/update.js"></script>
+</body>
+</html>
