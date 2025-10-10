@@ -85,10 +85,10 @@ async function rotateIncidents() {
   setInterval(() => {
     currentIndex = (currentIndex + 1) % incidents.length;
 
-    // 새 데이터를 상단에 추가 (중복 방지)
+    // 새 데이터를 배열 뒤에 추가 (reverse하면 위로 표시됨)
     const newIncident = incidents[currentIndex];
     if (!displayedIncidents.find(inc => inc.id === newIncident.id)) {
-      displayedIncidents.unshift(newIncident); // 배열 앞에 추가 (상단에 표시)
+      displayedIncidents.push(newIncident); // 배열 뒤에 추가 (reverse하면 상단에 표시)
       renderTable();
       console.log(`[${new Date().toISOString()}] New incident added at top: ${newIncident.fireName} (Total: ${displayedIncidents.length})`);
     }
