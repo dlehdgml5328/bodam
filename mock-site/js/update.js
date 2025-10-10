@@ -57,8 +57,14 @@ function renderTable() {
     return;
   }
 
-  // 배열을 역순으로 렌더링 (배열 끝이 테이블 위로, 배열 시작이 테이블 아래로)
-  tbody.innerHTML = displayedIncidents.slice().reverse().map(inc => createTableRow(inc)).join('');
+  // 최신 데이터가 위로 오도록 역순 정렬 (날짜+시간 기준)
+  const sorted = [...displayedIncidents].sort((a, b) => {
+    const dateA = new Date(a.occurrenceDate + ' ' + a.occurrenceTime);
+    const dateB = new Date(b.occurrenceDate + ' ' + b.occurrenceTime);
+    return dateB - dateA; // 최신이 먼저 (내림차순)
+  });
+
+  tbody.innerHTML = sorted.map(inc => createTableRow(inc)).join('');
 
   // 최근 갱신 시간 업데이트
   document.getElementById('last-updated').textContent = new Date().toLocaleString('ko-KR');
