@@ -17,6 +17,9 @@ from .password_reset import PasswordResetToken
 from .ranking import Ranking
 from .receipt import Receipt
 from .user import User
+from .fire_incident import FireIncident
+from .dispatch_event import DispatchEvent
+from .news_match import NewsMatch
 
 __all__ = [
     "Base",
@@ -37,4 +40,7 @@ __all__ = [
     "PasswordResetToken",
     "Ranking",
     "Receipt",
+    "FireIncident",
+    "DispatchEvent",
+    "NewsMatch",
 ]

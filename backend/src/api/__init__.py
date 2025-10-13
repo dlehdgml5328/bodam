@@ -1,6 +1,23 @@
 """API router exports."""
 
-from . import auth, donations, files, geo, groups, health, jobs, kakao, live, refunds, stations, webpush
+from . import (
+    auth,
+    donations,
+    files,
+    geo,
+    groups,
+    health,
+    jobs,
+    kakao,
+    live,
+    messages,
+    news,
+    rankings,
+    refunds,
+    stations,
+    stats,
+    webpush,
+)
 
 __all__ = [
     "auth",
@@ -12,7 +29,11 @@ __all__ = [
     "jobs",
     "kakao",
     "live",
+    "messages",
+    "news",
+    "rankings",
     "refunds",
     "stations",
+    "stats",
     "webpush",
 ]

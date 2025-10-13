@@ -22,4 +22,9 @@ def configure_logging() -> None:
     )
 
 
-__all__ = ["configure_logging"]
+def get_logger(name: str | None = None) -> structlog.BoundLogger:
+    """Get a structured logger instance."""
+    return structlog.get_logger(name)
+
+
+__all__ = ["configure_logging", "get_logger"]
