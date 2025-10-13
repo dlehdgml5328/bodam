@@ -1,0 +1,288 @@
+version: '3.9'
+
+# 개발 환경용 docker-compose (파이프라인 완전 버전)
+services:
+  # ============================================
+  # Database
+  # ============================================
+  db:
+    build:
+      context: .
+      dockerfile: infra/docker/db/Dockerfile
+    environment:
+      POSTGRES_DB: bodam
+      POSTGRES_USER: bodam
+      POSTGRES_PASSWORD: bodam
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infra/docker/db/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bodam-network
+
+  # ============================================
+  # Redis 3종 (분리)
+  # ============================================
+
+  # Cache Redis (DB 0) - LRU 정책
+  redis-cache:
+    image: redis:7.2-alpine
+    container_name: bodam-redis-cache
+    command: >
+      redis-server
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --save ""
+      --loglevel warning
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bodam-network
+
+  # Queue Redis (DB 0, 1) - AOF + RDB 영속성
+  redis-queue:
+    image: redis:7.2-alpine
+    container_name: bodam-redis-queue
+    command: >
+      redis-server
+      --maxmemory 1gb
+      --maxmemory-policy noeviction
+      --appendonly yes
+      --appendfsync everysec
+      --save 60 1
+      --loglevel warning
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis-queue-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bodam-network
+
+  # Semantic Redis (DB 2) - Vector Store
+  redis-semantic:
+    image: redis/redis-stack-server:latest
+    container_name: bodam-redis-semantic
+    environment:
+      - REDIS_ARGS=--maxmemory 2gb --maxmemory-policy noeviction --save 300 1 --appendonly yes
+    ports:
+      - "6381:6379"
+    volumes:
+      - redis-semantic-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bodam-network
+
+  # ============================================
+  # Backend Application
+  # ============================================
+  backend:
+    build:
+      context: ./backend
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+    env_file:
+      - backend/.env
+    environment:
+      # Database
+      - DATABASE_URL=postgresql+asyncpg://bodam:bodam@db:5432/bodam
+
+      # Redis 3종
+      - REDIS_CACHE_URL=redis://redis-cache:6379/0
+      - REDIS_QUEUE_URL=redis://redis-queue:6379/0
+      - REDIS_SEMANTIC_URL=redis://redis-semantic:6379/2
+
+      # Celery
+      - CELERY_BROKER_URL=redis://redis-queue:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis-queue:6379/1
+
+      # Security
+      - JWT_SECRET=dev-jwt-secret-key-for-bodam-project-must-be-long-enough-for-hmac-algorithm
+      - JWT_ALGORITHM=HS256
+      - ACCESS_TOKEN_TTL=1440
+      - PASSWORD_RESET_TOKEN_TTL=30
+
+      # Cookies & CORS
+      - COOKIE_DOMAIN=localhost
+      - COOKIE_SECURE=false
+      - COOKIE_SAMESITE=Lax
+      - ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+
+      # External APIs
+      - NAVER_CLIENT_ID=Le3v_zRXPEpKCD8hE_ei
+      - NAVER_CLIENT_SECRET=g3Gcw_ACuH
+      - YOUTUBE_API_KEY=AIzaSyBjTLfPvieVfr2YZIHRQTfqf4eEs4joUmQ
+      - TOGETHER_AI_API_KEY=bfa8dc15b9a53289883f17fb87ad2e2bb114609b35d76f45bc49643364e12056
+      - TOGETHER_AI_MODEL=meta-llama/Llama-3.3-70B-Instruct-Turbo-Free
+
+      # Crawler
+      - CRAWLER_MOCK_SITE_URL=https://dlehdgml5328.github.io/mock-fire-station-site/
+      - CRAWLER_INTERVAL_SECONDS=300
+
+      # Feature Flags
+      - DEBUG=true
+      - ENABLE_RATE_LIMITING=false
+      - ENABLE_MONITORING=true
+
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+      redis-queue:
+        condition: service_healthy
+      redis-semantic:
+        condition: service_healthy
+    volumes:
+      - ./backend/src:/app/src:rw
+    networks:
+      - bodam-network
+
+  # ============================================
+  # Celery Workers
+  # ============================================
+
+  # Main Worker (incident processing, dispatch events)
+  celery-worker:
+    build:
+      context: ./backend
+    command: celery -A src.worker.celery_app worker --loglevel=info --queues=celery,critical --concurrency=4
+    env_file:
+      - backend/.env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://bodam:bodam@db:5432/bodam
+      - REDIS_CACHE_URL=redis://redis-cache:6379/0
+      - REDIS_QUEUE_URL=redis://redis-queue:6379/0
+      - REDIS_SEMANTIC_URL=redis://redis-semantic:6379/2
+      - CELERY_BROKER_URL=redis://redis-queue:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis-queue:6379/1
+      - NAVER_CLIENT_ID=Le3v_zRXPEpKCD8hE_ei
+      - NAVER_CLIENT_SECRET=g3Gcw_ACuH
+      - YOUTUBE_API_KEY=AIzaSyBjTLfPvieVfr2YZIHRQTfqf4eEs4joUmQ
+      - TOGETHER_AI_API_KEY=bfa8dc15b9a53289883f17fb87ad2e2bb114609b35d76f45bc49643364e12056
+      - TOGETHER_AI_MODEL=meta-llama/Llama-3.3-70B-Instruct-Turbo-Free
+      - CRAWLER_MOCK_SITE_URL=https://dlehdgml5328.github.io/mock-fire-station-site/
+    depends_on:
+      - db
+      - redis-queue
+      - redis-cache
+      - redis-semantic
+    volumes:
+      - ./backend/src:/app/src:rw
+    networks:
+      - bodam-network
+
+  # News Matcher Worker (AI/semantic matching)
+  celery-worker-news:
+    build:
+      context: ./backend
+    command: celery -A src.worker.celery_app worker --loglevel=info --queues=news_matching --concurrency=2
+    env_file:
+      - backend/.env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://bodam:bodam@db:5432/bodam
+      - REDIS_CACHE_URL=redis://redis-cache:6379/0
+      - REDIS_QUEUE_URL=redis://redis-queue:6379/0
+      - REDIS_SEMANTIC_URL=redis://redis-semantic:6379/2
+      - CELERY_BROKER_URL=redis://redis-queue:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis-queue:6379/1
+      - NAVER_CLIENT_ID=Le3v_zRXPEpKCD8hE_ei
+      - NAVER_CLIENT_SECRET=g3Gcw_ACuH
+      - YOUTUBE_API_KEY=AIzaSyBjTLfPvieVfr2YZIHRQTfqf4eEs4joUmQ
+      - TOGETHER_AI_API_KEY=bfa8dc15b9a53289883f17fb87ad2e2bb114609b35d76f45bc49643364e12056
+      - TOGETHER_AI_MODEL=meta-llama/Llama-3.3-70B-Instruct-Turbo-Free
+    depends_on:
+      - db
+      - redis-queue
+      - redis-semantic
+    volumes:
+      - ./backend/src:/app/src:rw
+    networks:
+      - bodam-network
+
+  # Celery Beat (스케줄러)
+  celery-beat:
+    build:
+      context: ./backend
+    command: celery -A src.worker.celery_app beat --loglevel=info
+    env_file:
+      - backend/.env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://bodam:bodam@db:5432/bodam
+      - REDIS_CACHE_URL=redis://redis-cache:6379/0
+      - REDIS_QUEUE_URL=redis://redis-queue:6379/0
+      - CELERY_BROKER_URL=redis://redis-queue:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis-queue:6379/1
+      - CRAWLER_MOCK_SITE_URL=https://dlehdgml5328.github.io/mock-fire-station-site/
+    depends_on:
+      - redis-queue
+    volumes:
+      - ./backend/src:/app/src:rw
+    networks:
+      - bodam-network
+
+  # Celery Flower (모니터링)
+  # ============================================
+  # Frontend
+  # ============================================
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_BASE_URL=http://backend:8000
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend/src:/app/src:rw
+      - ./frontend/public:/app/public:rw
+    networks:
+      - bodam-network
+
+  # ============================================
+  # Mock Site Server (테스트용)
+  # ============================================
+  mock-site:
+    image: python:3.11-slim
+    container_name: bodam-mock-site
+    working_dir: /app
+    command: python -m http.server 8888
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./backend:/app:ro
+    networks:
+      - bodam-network
+
+# ============================================
+# Networks & Volumes
+# ============================================
+networks:
+  bodam-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-queue-data:
+  redis-semantic-data:

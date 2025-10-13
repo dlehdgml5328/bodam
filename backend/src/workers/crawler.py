@@ -2,7 +2,7 @@
 Mock 소방서 사이트 크롤러
 
 5분마다 Mock 사이트에서 화재 출동 데이터를 크롤링하여
-뉴스/영상 매칭 프로세스 시작
+fire_incidents 테이블에 저장하고 뉴스/영상 매칭 프로세스 시작
 """
 import httpx
 from bs4 import BeautifulSoup
@@ -10,77 +10,94 @@ from celery import shared_task
 from datetime import datetime
 import json
 from typing import Dict, Optional
-from src.cache.clients import get_redis
+import os
+from src.cache.clients import get_cache_client
 from src.monitoring.logging import get_logger
 
 logger = get_logger(__name__)
 
-MOCK_SITE_URL = "https://dlehdgml5328.github.io/mock-fire-station-site/"
+MOCK_SITE_URL = os.getenv("CRAWLER_MOCK_SITE_URL", "http://localhost:8888/test_static_mock.html")
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
-async def crawl_mock_site(self):
+def crawl_mock_site(self):
     """
     Mock 소방서 사이트 크롤링
+
+    GitHub Pages의 JSON 파일을 직접 가져와서 처리
 
     Returns:
         Dict: 크롤링된 화재 출동 데이터 또는 None
     """
+    import asyncio
+
     logger.info(f"[Crawler] Starting crawl from {MOCK_SITE_URL}")
 
+    async def _crawl():
+        try:
+            # 1. JSON 데이터 가져오기 (GitHub Pages)
+            json_url = MOCK_SITE_URL.rstrip('/') + '/data/incidents.json'
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(json_url)
+                response.raise_for_status()
+                incidents_data = response.json()
+
+            if not incidents_data or len(incidents_data) == 0:
+                logger.warning("[Crawler] No incidents in JSON data")
+                return None
+
+            # 2. 첫 번째 사고 데이터 가져오기 (최신 데이터)
+            first_incident = incidents_data[0]
+
+            logger.info(f"[Crawler] Parsed incident: {first_incident['id']} - {first_incident['fireName']}")
+
+            # 3. 데이터 포맷 변환 (JSON -> pipeline 포맷)
+            incident = {
+                'id': first_incident['id'],
+                'fireName': first_incident['fireName'],
+                'address': first_incident['address'],
+                'axisY': first_incident['axisY'],
+                'axisX': first_incident['axisX'],
+                'occurrenceDate': first_incident['occurrenceDate'],
+                'occurrenceTime': first_incident['occurrenceTime'],
+                'status': first_incident['status'],
+                'progress': first_incident['progress'],
+                'casualties': first_incident['casualties'],
+                'injured': first_incident['injured'],
+                'damageAmount': first_incident['damageAmount'],
+                'crawledAt': datetime.now().isoformat()
+            }
+
+            # 4. Redis 중복 체크 (선택사항 - DB에서도 중복 체크하므로)
+            redis = await get_cache_client()
+            incident_key = f"incident:{incident['id']}"
+
+            exists = await redis.exists(incident_key)
+            if exists:
+                logger.info(f"[Crawler] Incident {incident['id']} already in cache, updating...")
+
+            # 5. DB 저장 + 매칭 파이프라인 시작
+            # incident_pipeline 워커를 통해 DB 저장 및 뉴스 매칭 시작
+            from src.workers.incident_pipeline import save_and_match_incident
+            save_and_match_incident.delay(incident)
+
+            logger.info(f"[Crawler] Incident {incident['id']} queued for processing")
+
+            return incident
+
+        except httpx.HTTPError as e:
+            logger.error(f"[Crawler] HTTP error: {e}")
+            raise
+
+        except Exception as e:
+            logger.error(f"[Crawler] Unexpected error: {e}", exc_info=True)
+            raise
+
     try:
-        # 1. Mock 사이트 HTML 가져오기
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(MOCK_SITE_URL)
-            response.raise_for_status()
-            html = response.text
-
-        # 2. HTML 파싱
-        soup = BeautifulSoup(html, 'html.parser')
-        tbody = soup.find('tbody', {'id': 'incidents-tbody'})
-
-        if not tbody:
-            logger.warning("[Crawler] No tbody found in HTML")
-            return None
-
-        # 3. 테이블에서 최신 데이터 (첫 번째 행) 추출
-        first_row = tbody.find('tr')
-
-        if not first_row:
-            logger.warning("[Crawler] No incident rows found")
-            return None
-
-        incident = parse_incident_row(first_row)
-
-        if not incident:
-            logger.warning("[Crawler] Failed to parse incident row")
-            return None
-
-        logger.info(f"[Crawler] Parsed incident: {incident['id']} - {incident['fireName']}")
-
-        # 4. Redis 중복 체크
-        redis = await get_redis()
-        incident_key = f"incident:{incident['id']}"
-
-        exists = await redis.exists(incident_key)
-        if exists:
-            logger.info(f"[Crawler] Skip duplicate incident: {incident['id']}")
-            return None
-
-        # 5. 매칭 태스크 호출 (비동기)
-        from src.workers.matcher import match_news_and_videos
-        match_news_and_videos.delay(incident)
-
-        logger.info(f"[Crawler] New incident queued for matching: {incident['id']}")
-
-        return incident
-
-    except httpx.HTTPError as e:
-        logger.error(f"[Crawler] HTTP error: {e}")
-        raise self.retry(exc=e)
-
+        return asyncio.run(_crawl())
     except Exception as e:
-        logger.error(f"[Crawler] Unexpected error: {e}", exc_info=True)
+        logger.error(f"[Crawler] Task failed: {e}")
         raise self.retry(exc=e)
 
 
@@ -133,17 +150,29 @@ def parse_incident_row(row) -> Optional[Dict]:
         }
         status_code = status_map.get(status_text, 'D')
 
-        # 사상자 수 파싱
+        # 사상자 수 파싱 (예: "부상 2명")
         casualties = 0
         injured = 0
         if casualties_text and casualties_text != '-':
-            casualties = int(casualties_text.replace('명', ''))
+            # "부상 2명", "사망 1명" 등의 형식 처리
+            import re
+            numbers = re.findall(r'\d+', casualties_text)
+            if numbers:
+                casualties = int(numbers[0])
 
-        # 피해액 파싱
+        # 피해액 파싱 (예: "1억원", "5000만원")
         damage_amount = 0
         if damage_text and damage_text != '-':
-            damage_text_clean = damage_text.replace('만원', '').replace(',', '')
-            damage_amount = int(damage_text_clean) * 10000
+            import re
+            # "1억원" -> 100000000, "5000만원" -> 50000000
+            if '억' in damage_text:
+                numbers = re.findall(r'(\d+)억', damage_text)
+                if numbers:
+                    damage_amount = int(numbers[0]) * 100000000
+            elif '만원' in damage_text:
+                numbers = re.findall(r'(\d+)만원', damage_text)
+                if numbers:
+                    damage_amount = int(numbers[0]) * 10000
 
         incident = {
             'id': incident_id,
@@ -169,9 +198,9 @@ def parse_incident_row(row) -> Optional[Dict]:
 
 
 @shared_task
-async def test_crawl():
+def test_crawl():
     """크롤러 테스트용 태스크"""
-    result = await crawl_mock_site()
+    result = crawl_mock_site(None)
     if result:
         logger.info(f"[Test] Crawled: {json.dumps(result, indent=2, ensure_ascii=False)}")
     else:

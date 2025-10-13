@@ -1,6 +1,7 @@
 # Dependencies
 node_modules/
 venv/
+.venv/
 __pycache__/
 *.py[cod]
 *$py.class
@@ -56,6 +57,9 @@ coverage/
 *.tmp
 *.temp
 .cache/
+test_*.py
+test_*.html
+*.pyc
 
 # Docker
 docker-compose.override.yml

@@ -5,15 +5,23 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from geoalchemy2.shape import to_shape
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from src.database.connection import get_session
+from src.models.donation import Donation
 from src.models.fire_station import EmergencyPriority, LiveStatus, StationStatus
-from src.services.fire_station_service import EmergencyStatusRecord, FireStationService
+from src.services.fire_station_service import (
+    EmergencyStatusRecord,
+    FireStationNotFoundError,
+    FireStationService,
+)
 
 router = APIRouter(tags=["stations"])
 
@@ -59,6 +67,35 @@ class EmergencyStationResponse(BaseModel):
 class EmergencyStationsResponse(BaseModel):
     as_of: datetime
     stations: list[EmergencyStationResponse]
+
+
+class StationsListResponse(BaseModel):
+    stations: list[FireStationSummary]
+    total: int
+    page: int
+    limit: int
+
+
+class NearbyStation(BaseModel):
+    station: FireStationSummary
+    distance: float
+
+
+class NearbyStationsResponse(BaseModel):
+    stations: list[NearbyStation]
+
+
+class RecentDonationItem(BaseModel):
+    amount: Decimal
+    donor_name: str
+    message: str | None
+    created_at: datetime
+
+
+class StationDetailResponse(BaseModel):
+    station: FireStationSummary
+    station_code: str
+    recent_donations: list[RecentDonationItem]
 
 
 _LIVE_STATUS_LABELS: dict[LiveStatus, str] = {
@@ -157,57 +194,142 @@ async def list_emergency_stations(
     )
 
 
-@router.get("/stations")
+def _extract_coordinates(station: Any) -> tuple[float | None, float | None]:
+    if station.location is None:
+        return (None, None)
+    try:
+        point = to_shape(station.location)
+        return float(point.y), float(point.x)
+    except Exception:  # pragma: no cover - defensive guard
+        return (None, None)
+
+
+def _map_station_summary(station: Any) -> FireStationSummary:
+    lat, lng = _extract_coordinates(station)
+    return FireStationSummary(
+        id=station.id,
+        name=station.name,
+        address=station.address,
+        phone=station.phone,
+        region=station.region,
+        district=station.district,
+        status=station.status,
+        total_received=station.total_received,
+        donor_count=station.donor_count,
+        location=StationLocation(lat=lat, lng=lng),
+    )
+
+
+def _resolve_donor_name(donation: Donation) -> str:
+    if donation.is_anonymous:
+        return "익명"
+    if donation.donor_display_name:
+        return donation.donor_display_name
+    user = donation.user
+    if user and user.name:
+        return user.name
+    return "알 수 없음"
+
+
+@router.get("/stations", response_model=StationsListResponse)
 async def list_stations(
     page: int = 1,
     limit: int = 20,
     region: str | None = None,
     district: str | None = None,
     search: str | None = None,
-) -> dict:
-    return {
-        "stations": [
-            {
-                "id": str(uuid.uuid4()),
-                "name": "강남소방서",
-                "region": region or "서울",
-                "district": district or "강남구",
-                "address": "서울 강남구 테헤란로",
-            }
-        ],
-        "total": 1,
-        "page": page,
-        "limit": limit,
-    }
+    session: AsyncSession = Depends(get_session),
+) -> StationsListResponse:
+    if page < 1:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="INVALID_PAGE")
+    if limit < 1:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="INVALID_LIMIT")
+
+    sanitized_limit = min(limit, 200)
+    offset = (page - 1) * sanitized_limit
+
+    service = FireStationService(session)
+    stations, total = await service.list_stations(
+        region=region,
+        district=district,
+        search=search,
+        limit=sanitized_limit,
+        offset=offset,
+    )
+
+    return StationsListResponse(
+        stations=[_map_station_summary(station) for station in stations],
+        total=total,
+        page=page,
+        limit=sanitized_limit,
+    )
 
 
-@router.get("/stations/nearby")
-async def nearby_stations(lat: float, lng: float, radius: float = 5000, limit: int = 10) -> dict:
-    return {
-        "stations": [
-            {
-                "id": str(uuid.uuid4()),
-                "name": "강남소방서",
-                "distance": 1234.5,
-            }
-        ]
-    }
+@router.get("/stations/nearby", response_model=NearbyStationsResponse)
+async def nearby_stations(
+    lat: float,
+    lng: float,
+    radius: float = 5000,
+    limit: int = 10,
+    session: AsyncSession = Depends(get_session),
+) -> NearbyStationsResponse:
+    if limit < 1:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="INVALID_LIMIT")
+    sanitized_limit = min(limit, 50)
+    sanitized_radius = max(100.0, min(radius, 50000.0))
+
+    service = FireStationService(session)
+    rows = await service.nearby_stations(
+        latitude=lat,
+        longitude=lng,
+        radius_meters=sanitized_radius,
+        limit=sanitized_limit,
+    )
+    payload: list[NearbyStation] = []
+    for station, distance in rows:
+        payload.append(
+            NearbyStation(
+                station=_map_station_summary(station),
+                distance=float(distance) if distance is not None else 0.0,
+            )
+        )
+    return NearbyStationsResponse(stations=payload)
 
 
-@router.get("/stations/{station_id}")
-async def get_station(station_id: uuid.UUID) -> dict:
-    return {
-        "id": str(station_id),
-        "name": "강남소방서",
-        "recent_donations": [
-            {
-                "amount": 20000,
-                "donor_name": "홍길동",
-                "message": "응원합니다",
-                "created_at": datetime.utcnow().isoformat() + "Z",
-            }
-        ],
-    }
+@router.get("/stations/{station_id}", response_model=StationDetailResponse)
+async def get_station(
+    station_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+) -> StationDetailResponse:
+    service = FireStationService(session)
+    try:
+        station = await service.get_station(station_id)
+    except FireStationNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="STATION_NOT_FOUND") from exc
+
+    recent_stmt = (
+        select(Donation)
+        .where(Donation.fire_station_id == station_id)
+        .order_by(Donation.created_at.desc())
+        .limit(5)
+        .options(selectinload(Donation.user))
+    )
+    recent_result = await session.execute(recent_stmt)
+    recent_donations = [
+        RecentDonationItem(
+            amount=donation.amount,
+            donor_name=_resolve_donor_name(donation),
+            message=donation.message,
+            created_at=donation.created_at,
+        )
+        for donation in recent_result.scalars()
+    ]
+
+    return StationDetailResponse(
+        station=_map_station_summary(station),
+        station_code=station.station_code,
+        recent_donations=recent_donations,
+    )
 
 
 @router.get("/stations/{station_id}/rankings")

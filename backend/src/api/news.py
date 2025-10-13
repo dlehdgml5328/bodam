@@ -1,0 +1,270 @@
+"""News and media API endpoints powered by Redis feeds with mock fallback."""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timedelta
+from typing import Any
+
+from fastapi import APIRouter, Query
+from pydantic import BaseModel
+
+from src.integrations.mock_site import MockFireNewsClient, load_local_incidents
+from src.services.news_service import BreakingNewsRecord, NewsService, VideoNewsRecord
+
+router = APIRouter(prefix="/news", tags=["news"])
+
+
+class VideoNewsResponse(BaseModel):
+    id: int
+    title: str
+    thumbnail: str
+    duration: str
+    time: str
+    video_url: str | None = None
+    article_url: str
+    category: str
+    summary: str
+    views: int
+    likes: int
+    video_id: str
+
+
+class BreakingNewsResponse(BaseModel):
+    title: str
+    time: str
+    is_breaking: bool
+    link: str
+
+
+_UNSPLASH_IMAGES: tuple[str, ...] = (
+    "photo-1501706362039-c6e80948a90d",
+    "photo-1618005198919-d3d4b5a92eee",
+    "photo-1464036388609-747537735eab",
+    "photo-1497366754035-f200968a6e72",
+    "photo-1523475472560-d2df97ec485c",
+    "photo-1521033719794-41049d18b9fb",
+)
+
+_CATEGORY_BY_PROGRESS: dict[str, str] = {
+    "진압완료": "현장영상",
+    "진압중": "속보",
+    "보상완료": "후속보도",
+    "예방훈련": "훈련",
+    "점검완료": "점검",
+}
+
+_CATEGORY_BY_STATUS: dict[str, str] = {
+    "A": "속보",
+    "B": "속보",
+    "C": "브리핑",
+    "D": "현장영상",
+}
+
+
+logger = logging.getLogger(__name__)
+
+_client = MockFireNewsClient()
+_CACHE_TTL = timedelta(minutes=5)
+_incident_cache: tuple[datetime, list[dict[str, Any]]] | None = None
+_news_service = NewsService()
+
+
+def _format_datetime_obj(value: datetime | None) -> str:
+    if value is None:
+        return "-"
+    return value.strftime("%Y-%m-%d %H:%M")
+
+
+async def _get_fallback_incidents() -> list[dict[str, Any]]:
+    global _incident_cache
+
+    now = datetime.utcnow()
+    if _incident_cache is not None:
+        cached_at, cached_data = _incident_cache
+        if now - cached_at < _CACHE_TTL:
+            return cached_data
+
+    incidents: list[dict[str, Any]] = []
+    try:
+        incidents = await _client.fetch_incidents()
+        logger.debug("[NewsAPI] Retrieved %d incidents from mock site", len(incidents))
+    except Exception as exc:  # pragma: no cover - network failure fallback
+        logger.warning("[NewsAPI] Remote mock site fetch failed: %s", exc)
+
+    if not incidents:
+        incidents = load_local_incidents()
+        if incidents:
+            logger.info("[NewsAPI] Falling back to bundled mock incident data")
+        else:
+            logger.error("[NewsAPI] No incident data available after fallback")
+            return []
+
+    _incident_cache = (now, incidents)
+    return incidents
+
+
+def _format_datetime(date_str: str, time_str: str) -> str:
+    try:
+        dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
+    except ValueError:
+        try:
+            dt = datetime.strptime(date_str, "%Y-%m-%d")
+        except ValueError:
+            return date_str
+    return dt.strftime("%Y-%m-%d %H:%M")
+
+
+def _choose_thumbnail(index: int) -> str:
+    image_id = _UNSPLASH_IMAGES[index % len(_UNSPLASH_IMAGES)]
+    return f"https://images.unsplash.com/{image_id}?auto=format&fit=crop&w=800&q=80"
+
+
+def _extract_video_url(raw_url: str) -> str | None:
+    if "youtube.com/watch" in raw_url:
+        from urllib.parse import urlparse, parse_qs
+
+        parsed = urlparse(raw_url)
+        video_id = parse_qs(parsed.query).get("v", [None])[0]
+        if video_id:
+            return f"https://www.youtube.com/embed/{video_id}"
+    if "youtu.be/" in raw_url:
+        video_id = raw_url.rstrip("/").split("/")[-1]
+        if video_id:
+            return f"https://www.youtube.com/embed/{video_id}"
+    return None
+
+
+def _estimate_duration(seed: int) -> str:
+    minutes = 2 + seed % 5
+    seconds = seed % 60
+    return f"{minutes:02}:{seconds:02}"
+
+
+def _estimate_views(seed: int) -> tuple[int, int]:
+    views = 5000 + (seed % 25000)
+    likes = max(200, views // 6)
+    return views, likes
+
+
+def _build_video_news(incidents: list[dict[str, Any]], limit: int) -> list[VideoNewsResponse]:
+    payload: list[VideoNewsResponse] = []
+    for index, item in enumerate(incidents[:limit]):
+        incident_id = item.get("id", f"incident-{index}")
+        seed = sum(ord(ch) for ch in str(incident_id))
+        views, likes = _estimate_views(seed)
+        title = item.get("newsTitle") or f"{item.get('fireName', '소방서')} 소식"
+        raw_link = str(item.get("newsLink") or "")
+        payload.append(
+            VideoNewsResponse(
+                id=index + 1,
+                title=title,
+                thumbnail=_choose_thumbnail(index),
+                duration=_estimate_duration(seed),
+                time=_format_datetime(
+                    str(item.get("occurrenceDate", "")), str(item.get("occurrenceTime", "00:00"))
+                ),
+                video_url=_extract_video_url(raw_link),
+                article_url=raw_link,
+                category=_CATEGORY_BY_PROGRESS.get(
+                    str(item.get("progress", "")).strip(), _CATEGORY_BY_STATUS.get(item.get("status", ""), "브리핑")
+                ),
+                summary=item.get("address") or "소방 활동 현장의 최신 소식입니다.",
+                views=views,
+                likes=likes,
+                video_id=str(incident_id),
+            )
+        )
+    return payload
+
+
+def _build_breaking_news(incidents: list[dict[str, Any]], limit: int) -> list[BreakingNewsResponse]:
+    payload: list[BreakingNewsResponse] = []
+    for item in incidents[:limit]:
+        status_code = str(item.get("status", "")).upper()
+        payload.append(
+            BreakingNewsResponse(
+                title=item.get("newsTitle") or f"{item.get('fireName', '소방서')} 출동 소식",
+                time=_format_datetime(
+                    str(item.get("occurrenceDate", "")), str(item.get("occurrenceTime", "00:00"))
+                ),
+                is_breaking=status_code in {"A", "B", "D"},
+                link=item.get("newsLink") or "",
+            )
+        )
+    return payload
+
+
+def _map_video_record(record: VideoNewsRecord, index: int) -> VideoNewsResponse:
+    metadata = record.metadata or {}
+    duration = metadata.get("duration")
+    if not isinstance(duration, str) or not duration.strip():
+        seed = sum(ord(ch) for ch in record.id) + index
+        duration = _estimate_duration(seed)
+
+    thumbnail = record.thumbnail_url or _choose_thumbnail(index)
+    views = record.views if record.views is not None else 0
+    likes = record.likes if record.likes is not None else max(1, views // 6)
+    category = record.category or "현장영상"
+
+    return VideoNewsResponse(
+        id=index + 1,
+        title=record.title,
+        thumbnail=thumbnail,
+        duration=duration,
+        time=_format_datetime_obj(record.occurred_at),
+        video_url=record.video_url,
+        article_url=record.article_url or "",
+        category=category,
+        summary=record.summary or "소방 활동 현장의 최신 소식입니다.",
+        views=views,
+        likes=likes,
+        video_id=record.id,
+    )
+
+
+def _map_breaking_record(record: BreakingNewsRecord) -> BreakingNewsResponse:
+    link = record.link or ""
+    return BreakingNewsResponse(
+        title=record.title,
+        time=_format_datetime_obj(record.timestamp),
+        is_breaking=record.is_breaking,
+        link=link,
+    )
+
+
+async def _get_video_payload(limit: int) -> list[VideoNewsResponse]:
+    redis_records = await _news_service.fetch_videos(limit)
+    if redis_records:
+        return [_map_video_record(record, idx) for idx, record in enumerate(redis_records)]
+
+    incidents = await _get_fallback_incidents()
+    if not incidents:
+        return []
+    return _build_video_news(incidents, limit)
+
+
+async def _get_breaking_payload(limit: int) -> list[BreakingNewsResponse]:
+    redis_records = await _news_service.fetch_breaking(limit)
+    if redis_records:
+        return [_map_breaking_record(record) for record in redis_records[:limit]]
+
+    incidents = await _get_fallback_incidents()
+    if not incidents:
+        return []
+    return _build_breaking_news(incidents, limit)
+
+
+@router.get("/videos", response_model=list[VideoNewsResponse])
+async def list_video_news(limit: int = Query(default=6, ge=1, le=20)) -> list[VideoNewsResponse]:
+    """영상 뉴스 목록 (mock-site incidents 기반)."""
+    return await _get_video_payload(limit)
+
+
+@router.get("/breaking", response_model=list[BreakingNewsResponse])
+async def list_breaking_news(limit: int = Query(default=15, ge=1, le=50)) -> list[BreakingNewsResponse]:
+    """속보 뉴스 스트림 (mock-site incidents 기반)."""
+    return await _get_breaking_payload(limit)
+
+
+__all__ = ["router"]

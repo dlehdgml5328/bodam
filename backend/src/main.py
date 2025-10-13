@@ -4,7 +4,25 @@ load_dotenv()
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import auth, donations, files, geo, groups, health, jobs, kakao, live, refunds, stations, webpush
+from .api import (
+    auth,
+    donations,
+    files,
+    geo,
+    groups,
+    health,
+    incidents,
+    jobs,
+    kakao,
+    live,
+    messages,
+    news,
+    rankings,
+    refunds,
+    stations,
+    stats,
+    webpush,
+)
 from .api.admin import refunds as admin_refunds, resources as admin_resources, search as admin_search
 from .api.webhooks import toss
 from .middleware.auth import AuthMiddleware
@@ -32,6 +50,11 @@ app.add_middleware(AuthMiddleware)
 app.include_router(auth.router)
 app.include_router(donations.router)
 app.include_router(stations.router)
+app.include_router(stats.router)
+app.include_router(rankings.router)
+app.include_router(news.router)
+app.include_router(messages.router)
+app.include_router(incidents.router)
 app.include_router(files.router)
 app.include_router(geo.router)
 app.include_router(groups.router)
