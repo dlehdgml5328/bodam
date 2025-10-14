@@ -54,6 +54,81 @@ def build_matcher_graph() -> StateGraph:
     return workflow.compile()
 
 
+async def _run_matcher(incident: Dict):
+    """
+    화재 출동 데이터에 뉴스/영상 매칭 (LangGraph) - 실제 async 로직
+
+    Args:
+        incident: 화재 출동 데이터
+    """
+    incident_id = incident.get('id')
+    logger.info(f"[Matcher] Starting LangGraph match for incident: {incident_id}")
+
+    # 이미 매칭된 사고인지 확인 (API 호출 절감)
+    try:
+        from sqlalchemy import select
+        from src.database.connection import get_session
+        from src.models.news_match import NewsMatch
+
+        async for session in get_session():
+            stmt = select(NewsMatch).where(NewsMatch.incident_id == incident_id).limit(1)
+            result = await session.execute(stmt)
+            existing = result.scalar_one_or_none()
+
+            if existing:
+                logger.info(f"[Matcher] Incident {incident_id} already matched, skipping")
+                return {
+                    "incident_id": incident_id,
+                    "news_count": 0,
+                    "video_count": 0,
+                    "skipped": True
+                }
+            break
+    except Exception as e:
+        logger.warning(f"[Matcher] Error checking existing match: {e}")
+        # 에러 발생 시에도 매칭 진행
+
+    try:
+        # LangGraph 워크플로우 빌드
+        graph = build_matcher_graph()
+
+        # 초기 상태 설정
+        initial_state: MatcherState = {
+            "incident": incident,
+            "keywords": [],
+            "news_results": [],
+            "video_results": [],
+            "evaluated_news": [],
+            "evaluated_videos": [],
+            "error": None
+        }
+
+        # 워크플로우 실행
+        final_state = await graph.ainvoke(initial_state)
+
+        # 에러 체크
+        if final_state.get("error"):
+            logger.error(f"[Matcher] Workflow error: {final_state['error']}")
+            # 에러 발생 시에도 부분 결과 저장
+
+        logger.info(
+            f"[Matcher] LangGraph match complete for {incident_id}: "
+            f"{len(final_state['evaluated_news'])} news, "
+            f"{len(final_state['evaluated_videos'])} videos"
+        )
+
+        # DB에 저장되었으므로 Redis는 스킵 (API가 DB를 먼저 확인함)
+        return {
+            "incident_id": incident_id,
+            "news_count": len(final_state['evaluated_news']),
+            "video_count": len(final_state['evaluated_videos'])
+        }
+
+    except Exception as e:
+        logger.error(f"[Matcher] Error matching incident {incident_id}: {e}", exc_info=True)
+        raise
+
+
 @shared_task
 def match_news_and_videos(incident: Dict):
     """
@@ -64,72 +139,16 @@ def match_news_and_videos(incident: Dict):
     """
     import asyncio
 
-    incident_id = incident.get('id')
-    logger.info(f"[Matcher] Starting LangGraph match for incident: {incident_id}")
-
-    async def _match():
-        try:
-            # LangGraph 워크플로우 빌드
-            graph = build_matcher_graph()
-
-            # 초기 상태 설정
-            initial_state: MatcherState = {
-                "incident": incident,
-                "keywords": [],
-                "news_results": [],
-                "video_results": [],
-                "evaluated_news": [],
-                "evaluated_videos": [],
-                "error": None
-            }
-
-            # 워크플로우 실행
-            final_state = await graph.ainvoke(initial_state)
-
-            # 에러 체크
-            if final_state.get("error"):
-                logger.error(f"[Matcher] Workflow error: {final_state['error']}")
-                # 에러 발생 시에도 부분 결과 저장
-
-            # Redis에 저장
-            redis = await get_cache_client()
-
-            matched_data = {
-                **incident,
-                "relatedNews": final_state["evaluated_news"],
-                "relatedVideos": final_state["evaluated_videos"],
-                "matchedAt": datetime.now().isoformat(),
-                "keywords": final_state["keywords"],
-                "evaluationMethod": "llama-3.3-70b"
-            }
-
-            # 24시간 TTL로 저장
-            incident_key = f"incident:{incident_id}"
-            await redis.setex(
-                incident_key,
-                86400,  # 24시간
-                json.dumps(matched_data, ensure_ascii=False)
-            )
-
-            # 최근 목록에 추가 (최대 30개 유지)
-            await redis.lpush("recent_incidents", incident_id)
-            await redis.ltrim("recent_incidents", 0, 29)
-
-            logger.info(
-                f"[Matcher] LangGraph match complete for {incident_id}: "
-                f"{len(final_state['evaluated_news'])} news, "
-                f"{len(final_state['evaluated_videos'])} videos"
-            )
-
-            return matched_data
-
-        except Exception as e:
-            logger.error(f"[Matcher] Error matching incident {incident_id}: {e}", exc_info=True)
-            raise
-
-    # asyncio 실행
+    # 기존 event loop 사용 (Celery worker의 loop)
     try:
-        return asyncio.run(_match())
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        # 없으면 새로 생성
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    try:
+        return loop.run_until_complete(_run_matcher(incident))
     except Exception as e:
         logger.error(f"[Matcher] Task failed: {e}", exc_info=True)
         raise

@@ -18,11 +18,12 @@ celery_app = Celery(
 
 # Celery Beat 스케줄 설정
 celery_app.conf.beat_schedule = {
-    # Mock 사이트 크롤링 (5분마다)
+    # Mock 사이트 크롤링 (30분마다)
     # 크롤링 → DB 저장 → 뉴스 매칭
-    'crawl-mock-site-every-5min': {
-        'task': 'crawl_mock_site',
-        'schedule': 300.0,  # 5분 = 300초
+    # YouTube API 할당량 절약: 하루 48회 × 200 units = 9,600 units (할당량 내)
+    'crawl-mock-site-every-30min': {
+        'task': 'src.workers.crawler.crawl_mock_site',
+        'schedule': 1800.0,  # 30분 = 1800초
     },
 }
 

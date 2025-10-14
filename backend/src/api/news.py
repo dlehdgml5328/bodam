@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from src.integrations.mock_site import MockFireNewsClient, load_local_incidents
 from src.services.news_service import BreakingNewsRecord, NewsService, VideoNewsRecord
 
-router = APIRouter(prefix="/news", tags=["news"])
+router = APIRouter(prefix="/api/news", tags=["news"])
 
 
 class VideoNewsResponse(BaseModel):
@@ -29,12 +29,29 @@ class VideoNewsResponse(BaseModel):
     likes: int
     video_id: str
 
+    class Config:
+        populate_by_name = True
+        # JSON 응답 시 카멜케이스로 변환
+        alias_generator = lambda field_name: ''.join(
+            word.capitalize() if i > 0 else word
+            for i, word in enumerate(field_name.split('_'))
+        )
+        by_alias = True
+
 
 class BreakingNewsResponse(BaseModel):
     title: str
     time: str
     is_breaking: bool
     link: str
+
+    class Config:
+        populate_by_name = True
+        alias_generator = lambda field_name: ''.join(
+            word.capitalize() if i > 0 else word
+            for i, word in enumerate(field_name.split('_'))
+        )
+        by_alias = True
 
 
 _UNSPLASH_IMAGES: tuple[str, ...] = (
@@ -234,21 +251,124 @@ def _map_breaking_record(record: BreakingNewsRecord) -> BreakingNewsResponse:
 
 
 async def _get_video_payload(limit: int) -> list[VideoNewsResponse]:
-    redis_records = await _news_service.fetch_videos(limit)
-    if redis_records:
-        return [_map_video_record(record, idx) for idx, record in enumerate(redis_records)]
+    # DB에서 영상만 가져오기 (실시간 주요 뉴스 섹션)
+    try:
+        from sqlalchemy import select, desc
+        from src.database.connection import get_session
+        from src.models.news_match import NewsMatch
+        from src.models.fire_incident import FireIncident
 
-    incidents = await _get_fallback_incidents()
-    if not incidents:
-        return []
-    return _build_video_news(incidents, limit)
+        async for session in get_session():
+            query = (
+                select(NewsMatch, FireIncident)
+                .join(FireIncident, NewsMatch.incident_id == FireIncident.id)
+                .where(NewsMatch.news_type == "video")
+                .order_by(desc(NewsMatch.matched_at))
+                .limit(limit)
+            )
+
+            result = await session.execute(query)
+            rows = result.all()
+
+            if rows:
+                video_list = []
+                for idx, (news_match, incident) in enumerate(rows):
+                    # YouTube URL에서 video ID 추출
+                    video_id = news_match.news_id
+                    if "youtube.com/watch?v=" in news_match.url:
+                        video_id = news_match.url.split("v=")[1].split("&")[0]
+                    elif "youtu.be/" in news_match.url:
+                        video_id = news_match.url.split("youtu.be/")[1].split("?")[0]
+
+                    # 썸네일 URL
+                    thumbnail = news_match.thumbnail_url or f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"
+
+                    # 시간 포맷
+                    published_at = news_match.published_at or news_match.matched_at
+                    time_str = _format_datetime_obj(published_at) if published_at else ""
+
+                    video_list.append(VideoNewsResponse(
+                        id=idx + 1,
+                        title=news_match.title,
+                        thumbnail=thumbnail,
+                        duration="00:00",
+                        time=time_str,
+                        video_url=f"https://www.youtube.com/embed/{video_id}",
+                        article_url=news_match.url,
+                        category="화재",
+                        summary=f"{incident.location_address}에서 발생한 화재 사고",
+                        views=0,
+                        likes=0,
+                        video_id=video_id,
+                    ))
+
+                logger.info(f"[NewsAPI] Loaded {len(video_list)} videos from news_matches table")
+                return video_list
+            else:
+                # DB에 영상이 없으면 빈 배열 반환 (Mock 데이터 사용 안 함)
+                logger.info(f"[NewsAPI] No videos in DB, returning empty list")
+                return []
+            break
+    except Exception as e:
+        logger.warning(f"[NewsAPI] Failed to load from DB: {e}")
+
+    # DB 조회 실패 시에도 빈 배열 반환 (Fallback 없음)
+    return []
 
 
 async def _get_breaking_payload(limit: int) -> list[BreakingNewsResponse]:
+    # 먼저 DB에서 실제 매칭된 뉴스 데이터 가져오기
+    try:
+        from sqlalchemy import select, desc
+        from src.database.connection import get_session
+        from src.models.news_match import NewsMatch
+        from src.models.fire_incident import FireIncident
+
+        async for session in get_session():
+            query = (
+                select(NewsMatch, FireIncident)
+                .join(FireIncident, NewsMatch.incident_id == FireIncident.id)
+                .where(NewsMatch.news_type == "news")
+                .order_by(desc(NewsMatch.matched_at))
+                .limit(limit)
+            )
+
+            result = await session.execute(query)
+            rows = result.all()
+
+            if rows:
+                news_list = []
+                for news_match, incident in rows:
+                    # 시간 포맷
+                    published_at = news_match.published_at or news_match.matched_at
+                    time_str = _format_datetime_obj(published_at) if published_at else ""
+
+                    # 최근 1시간 이내면 속보
+                    is_breaking = False
+                    if published_at:
+                        from datetime import datetime, timezone
+                        time_diff = datetime.now(timezone.utc) - published_at
+                        is_breaking = time_diff.total_seconds() < 3600  # 1시간
+
+                    news_list.append(BreakingNewsResponse(
+                        title=news_match.title,
+                        time=time_str,
+                        is_breaking=is_breaking,
+                        link=news_match.url,
+                    ))
+
+                logger.info(f"[NewsAPI] Loaded {len(news_list)} breaking news from news_matches table")
+                return news_list
+            break
+    except Exception as e:
+        logger.warning(f"[NewsAPI] Failed to load from DB: {e}")
+
+    # Fallback: Redis
     redis_records = await _news_service.fetch_breaking(limit)
     if redis_records:
         return [_map_breaking_record(record) for record in redis_records[:limit]]
 
+    # Final fallback: Mock data
     incidents = await _get_fallback_incidents()
     if not incidents:
         return []
@@ -256,7 +376,7 @@ async def _get_breaking_payload(limit: int) -> list[BreakingNewsResponse]:
 
 
 @router.get("/videos", response_model=list[VideoNewsResponse])
-async def list_video_news(limit: int = Query(default=6, ge=1, le=20)) -> list[VideoNewsResponse]:
+async def list_video_news(limit: int = Query(default=6, ge=1, le=50)) -> list[VideoNewsResponse]:
     """영상 뉴스 목록 (mock-site incidents 기반)."""
     return await _get_video_payload(limit)
 

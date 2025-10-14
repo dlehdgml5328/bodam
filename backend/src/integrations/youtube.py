@@ -27,7 +27,8 @@ class YouTubeClient:
         query: str,
         max_results: int = 5,
         order: str = "date",
-        video_duration: str = "any"
+        video_duration: str = "any",
+        published_after: str = None
     ) -> List[Dict]:
         """
         영상 검색
@@ -37,20 +38,26 @@ class YouTubeClient:
             max_results: 검색 결과 개수 (최대 50)
             order: 정렬 옵션 (date, relevance, viewCount, rating)
             video_duration: 영상 길이 (any, short, medium, long)
+            published_after: 이 날짜 이후 발행된 영상만 검색 (RFC 3339 format: 2025-01-01T00:00:00Z)
 
         Returns:
             List[Dict]: 영상 검색 결과
         """
         try:
-            request = self.youtube.search().list(
-                q=query,
-                part="snippet",
-                type="video",
-                maxResults=min(max_results, 50),
-                order=order,
-                relevanceLanguage="ko",
-                videoDuration=video_duration
-            )
+            search_params = {
+                "q": query,
+                "part": "snippet",
+                "type": "video",
+                "maxResults": min(max_results, 50),
+                "order": order,
+                "relevanceLanguage": "ko",
+                "videoDuration": video_duration
+            }
+
+            if published_after:
+                search_params["publishedAfter"] = published_after
+
+            request = self.youtube.search().list(**search_params)
 
             response = request.execute()
             items = response.get("items", [])

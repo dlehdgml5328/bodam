@@ -251,27 +251,12 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_BASE_URL=http://backend:8000
+      - NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
     depends_on:
       - backend
     volumes:
       - ./frontend/src:/app/src:rw
       - ./frontend/public:/app/public:rw
-    networks:
-      - bodam-network
-
-  # ============================================
-  # Mock Site Server (테스트용)
-  # ============================================
-  mock-site:
-    image: python:3.11-slim
-    container_name: bodam-mock-site
-    working_dir: /app
-    command: python -m http.server 8888
-    ports:
-      - "8888:8888"
-    volumes:
-      - ./backend:/app:ro
     networks:
       - bodam-network
 

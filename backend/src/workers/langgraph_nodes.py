@@ -80,10 +80,10 @@ async def search_news_node(state: MatcherState) -> MatcherState:
                 query=primary_keyword,
                 target_date=occurrence_date,
                 days_range=3,
-                display=20
+                display=5  # 20 → 5로 감소 (API 호출 절감)
             )
         else:
-            news_results = await naver_client.search(primary_keyword, display=10)
+            news_results = await naver_client.search(primary_keyword, display=5)
 
         logger.info(f"[Node] Found {len(news_results)} news articles")
         state["news_results"] = news_results
@@ -100,7 +100,10 @@ async def search_videos_node(state: MatcherState) -> MatcherState:
     """
     3단계: 유튜브 영상 검색 (Tool)
     """
+    from datetime import datetime, timedelta
+
     keywords = state["keywords"]
+    incident = state["incident"]
 
     if not keywords:
         logger.warning("[Node] No keywords, skipping video search")
@@ -115,9 +118,13 @@ async def search_videos_node(state: MatcherState) -> MatcherState:
             api_key=os.getenv('YOUTUBE_API_KEY', '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')
         )
 
-        video_results = youtube_client.search_news_videos(
-            query=primary_keyword,
-            max_results=10
+        # 날짜 필터 없이 검색 (관련성 높은 영상 우선)
+        video_results = youtube_client.search(
+            query=f"{primary_keyword} 화재",
+            max_results=5,
+            order="relevance",  # date → relevance (관련성 우선)
+            video_duration="short",
+            published_after=None  # 날짜 필터 제거
         )
 
         logger.info(f"[Node] Found {len(video_results)} videos")
@@ -180,13 +187,27 @@ async def evaluate_relevance_node(state: MatcherState) -> MatcherState:
                 result["relevance_reason"] = item["reason"]
                 evaluated_videos.append(result)
 
+        # 각 타입별로 최고 점수 1개만 선택
+        best_news = max(evaluated_news, key=lambda x: x.get("relevance_score", 0)) if evaluated_news else None
+        best_video = max(evaluated_videos, key=lambda x: x.get("relevance_score", 0)) if evaluated_videos else None
+
+        final_news = [best_news] if best_news else []
+        final_videos = [best_video] if best_video else []
+
+        # 점수 상세 로그
+        if best_news:
+            logger.info(f"[Node] Best news: score={best_news.get('relevance_score'):.2f}, title={best_news.get('title', '')[:50]}")
+        if best_video:
+            logger.info(f"[Node] Best video: score={best_video.get('relevance_score'):.2f}, title={best_video.get('title', '')[:50]}")
+
         logger.info(
             f"[Node] Evaluation complete: "
-            f"{len(evaluated_news)} news, {len(evaluated_videos)} videos (score >= 0.6)"
+            f"{len(evaluated_news)} news ({len(final_news)} selected), "
+            f"{len(evaluated_videos)} videos ({len(final_videos)} selected) (score >= 0.6)"
         )
 
-        state["evaluated_news"] = evaluated_news
-        state["evaluated_videos"] = evaluated_videos
+        state["evaluated_news"] = final_news
+        state["evaluated_videos"] = final_videos
 
         await together_client.close()
 
@@ -268,11 +289,14 @@ async def save_matches_node(state: MatcherState) -> MatcherState:
                     except Exception as e:
                         logger.warning(f"[Node] Failed to parse video date: {e}")
 
+                # YouTube API는 'id' 키를 사용
+                video_id = video.get('id', video.get('videoId', ''))
+
                 # 중복 체크 후 insert
                 stmt = select(NewsMatch).where(
                     NewsMatch.incident_id == incident_id,
                     NewsMatch.news_type == 'video',
-                    NewsMatch.news_id == video.get('videoId', '')
+                    NewsMatch.news_id == video_id
                 )
                 result = await session.execute(stmt)
                 existing = result.scalar_one_or_none()
@@ -281,9 +305,9 @@ async def save_matches_node(state: MatcherState) -> MatcherState:
                     video_match = NewsMatch(
                         incident_id=incident_id,
                         news_type='video',
-                        news_id=video.get('videoId', ''),
+                        news_id=video_id,
                         title=video.get('title', ''),
-                        url=f"https://www.youtube.com/watch?v={video.get('videoId', '')}",
+                        url=f"https://www.youtube.com/watch?v={video_id}",
                         published_at=published_at,
                         thumbnail_url=video.get('thumbnail', ''),
                         similarity_score=video.get('relevance_score', 0.0)
