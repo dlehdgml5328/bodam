@@ -47,44 +47,40 @@ def crawl_mock_site(self):
                 logger.warning("[Crawler] No incidents in JSON data")
                 return None
 
-            # 2. 첫 번째 사고 데이터 가져오기 (최신 데이터)
-            first_incident = incidents_data[0]
+            logger.info(f"[Crawler] Found {len(incidents_data)} incidents in JSON data")
 
-            logger.info(f"[Crawler] Parsed incident: {first_incident['id']} - {first_incident['fireName']}")
-
-            # 3. 데이터 포맷 변환 (JSON -> pipeline 포맷)
-            incident = {
-                'id': first_incident['id'],
-                'fireName': first_incident['fireName'],
-                'address': first_incident['address'],
-                'axisY': first_incident['axisY'],
-                'axisX': first_incident['axisX'],
-                'occurrenceDate': first_incident['occurrenceDate'],
-                'occurrenceTime': first_incident['occurrenceTime'],
-                'status': first_incident['status'],
-                'progress': first_incident['progress'],
-                'casualties': first_incident['casualties'],
-                'injured': first_incident['injured'],
-                'damageAmount': first_incident['damageAmount'],
-                'crawledAt': datetime.now().isoformat()
-            }
-
-            # 4. Redis 중복 체크 (선택사항 - DB에서도 중복 체크하므로)
-            redis = await get_cache_client()
-            incident_key = f"incident:{incident['id']}"
-
-            exists = await redis.exists(incident_key)
-            if exists:
-                logger.info(f"[Crawler] Incident {incident['id']} already in cache, updating...")
-
-            # 5. DB 저장 + 매칭 파이프라인 시작
-            # incident_pipeline 워커를 통해 DB 저장 및 뉴스 매칭 시작
+            # 2. 모든 사고 데이터 처리
             from src.workers.incident_pipeline import save_and_match_incident
-            save_and_match_incident.delay(incident)
 
-            logger.info(f"[Crawler] Incident {incident['id']} queued for processing")
+            processed_count = 0
+            for incident_data in incidents_data:
+                logger.info(f"[Crawler] Parsed incident: {incident_data['id']} - {incident_data['fireName']}")
 
-            return incident
+                # 3. 데이터 포맷 변환 (JSON -> pipeline 포맷)
+                incident = {
+                    'id': incident_data['id'],
+                    'fireName': incident_data['fireName'],
+                    'address': incident_data['address'],
+                    'axisY': incident_data['axisY'],
+                    'axisX': incident_data['axisX'],
+                    'occurrenceDate': incident_data['occurrenceDate'],
+                    'occurrenceTime': incident_data['occurrenceTime'],
+                    'status': incident_data['status'],
+                    'progress': incident_data['progress'],
+                    'casualties': incident_data['casualties'],
+                    'injured': incident_data['injured'],
+                    'damageAmount': incident_data['damageAmount'],
+                    'crawledAt': datetime.now().isoformat()
+                }
+
+                # 4. DB 저장 + 매칭 파이프라인 시작
+                save_and_match_incident.delay(incident)
+                processed_count += 1
+
+                logger.info(f"[Crawler] Incident {incident['id']} queued for processing")
+
+            logger.info(f"[Crawler] Queued {processed_count} incidents for processing")
+            return {'processed_count': processed_count, 'total_count': len(incidents_data)}
 
         except httpx.HTTPError as e:
             logger.error(f"[Crawler] HTTP error: {e}")

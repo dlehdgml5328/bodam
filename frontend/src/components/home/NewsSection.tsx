@@ -28,7 +28,7 @@ interface BreakingNews {
 }
 
 export default function NewsSection() {
-  const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
+  const [currentVideoPage, setCurrentVideoPage] = useState(0);
   const [currentBreakingIndex, setCurrentBreakingIndex] = useState(0);
   const [showVideoModal, setShowVideoModal] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState<VideoNews | null>(null);
@@ -42,19 +42,35 @@ export default function NewsSection() {
     async function loadNews() {
       try {
         const [videos, breaking] = await Promise.all([
-          apiRequest<VideoNews[]>('/news/videos?limit=6'),
-          apiRequest<BreakingNews[]>('/news/breaking?limit=15'),
+          apiRequest<VideoNews[]>('/api/news/videos?limit=50'),
+          apiRequest<BreakingNews[]>('/api/news/breaking?limit=15'),
         ]);
 
         if (!cancelled) {
-          setVideoNews(Array.isArray(videos) ? videos : []);
+          // 중복 제거: id 기준으로 unique하게
+          const uniqueVideos = Array.isArray(videos)
+            ? videos.filter((video, index, self) =>
+                index === self.findIndex((v) => v.id === video.id)
+              )
+            : [];
+
+          setVideoNews((prev) => {
+            // 기존 뉴스와 새로운 뉴스 합치기
+            const combined = [...prev];
+            uniqueVideos.forEach((newVideo) => {
+              // 이미 존재하는 뉴스가 아니면 추가
+              if (!combined.find((v) => v.id === newVideo.id)) {
+                combined.push(newVideo);
+              }
+            });
+            return combined;
+          });
+
           setBreakingNews(Array.isArray(breaking) ? breaking : []);
         }
       } catch (error) {
         if (!cancelled) {
           console.error('[NewsSection] Failed to fetch news', error);
-          setVideoNews([]);
-          setBreakingNews([]);
         }
       } finally {
         if (!cancelled) {
@@ -65,20 +81,14 @@ export default function NewsSection() {
 
     loadNews();
 
+    // 30초마다 새로운 뉴스 확인 (중복은 자동으로 필터링됨)
+    const interval = setInterval(loadNews, 30000);
+
     return () => {
       cancelled = true;
+      clearInterval(interval);
     };
   }, []);
-
-  // 비디오 뉴스 자동 회전 (10초마다)
-  useEffect(() => {
-    if (videoNews.length === 0) return;
-
-    const videoTimer = setInterval(() => {
-      setCurrentVideoIndex((prev) => (prev + 1) % videoNews.length);
-    }, 10000);
-    return () => clearInterval(videoTimer);
-  }, [videoNews.length]);
 
   // 속보 뉴스 자동 회전 (10초마다)
   useEffect(() => {
@@ -92,17 +102,26 @@ export default function NewsSection() {
 
   const getVisibleVideoNews = () => {
     if (videoNews.length === 0) return [];
-    const visible = [];
-    for (let i = 0; i < 4; i++) {
-      visible.push(videoNews[(currentVideoIndex + i) % videoNews.length]);
-    }
-    return visible;
+    const startIndex = currentVideoPage * 4;
+    return videoNews.slice(startIndex, startIndex + 4);
+  };
+
+  const totalVideoPages = Math.ceil(videoNews.length / 4);
+
+  const handlePrevPage = () => {
+    setCurrentVideoPage((prev) => (prev > 0 ? prev - 1 : totalVideoPages - 1));
+  };
+
+  const handleNextPage = () => {
+    setCurrentVideoPage((prev) => (prev < totalVideoPages - 1 ? prev + 1 : 0));
   };
 
   const getVisibleBreakingNews = () => {
     if (breakingNews.length === 0) return [];
+    // 데이터가 8개보다 적으면 실제 개수만큼만 표시 (중복 방지)
+    const count = Math.min(8, breakingNews.length);
     const visible = [];
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < count; i++) {
       visible.push(breakingNews[(currentBreakingIndex + i) % breakingNews.length]);
     }
     return visible;
@@ -151,7 +170,25 @@ export default function NewsSection() {
               <div className="w-3 h-3 bg-red-500 rounded-full mr-2 animate-pulse"></div>
               실시간 주요 뉴스
             </h2>
-            {videoNews.length > 0 && <span className="text-sm text-gray-500">10초마다 업데이트</span>}
+            {videoNews.length > 4 && (
+              <div className="flex items-center space-x-2">
+                <span className="text-sm text-gray-500">
+                  {currentVideoPage + 1} / {totalVideoPages}
+                </span>
+                <button
+                  onClick={handlePrevPage}
+                  className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
+                >
+                  <i className="ri-arrow-left-s-line text-gray-700"></i>
+                </button>
+                <button
+                  onClick={handleNextPage}
+                  className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
+                >
+                  <i className="ri-arrow-right-s-line text-gray-700"></i>
+                </button>
+              </div>
+            )}
           </div>
 
           {displayedVideoNews.length === 0 ? (
@@ -160,9 +197,9 @@ export default function NewsSection() {
             </Card>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {displayedVideoNews.map((news, index) => (
+              {displayedVideoNews.map((news) => (
                 <div
-                  key={index}
+                  key={news.id}
                   className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 cursor-pointer"
                   onClick={() => handleVideoClick(news)}
                 >
@@ -173,7 +210,6 @@ export default function NewsSection() {
                       fill
                       className="object-cover object-top"
                       sizes="(min-width: 768px) 50vw, 100vw"
-                      priority={index === currentVideoIndex}
                     />
                     <div className="absolute inset-0 bg-black bg-black/30 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity duration-300">
                       <div className="w-16 h-16 bg-red-600 bg-red-600/90 rounded-full flex items-center justify-center">
@@ -183,11 +219,6 @@ export default function NewsSection() {
                     <div className="absolute top-4 left-4">
                       <span className="bg-red-600 text-white px-3 py-1 rounded-full text-sm font-medium">
                         영상
-                      </span>
-                    </div>
-                    <div className="absolute bottom-4 right-4">
-                      <span className="bg-black bg-black/70 text-white px-2 py-1 rounded text-sm">
-                        {news.duration}
                       </span>
                     </div>
                   </div>
@@ -294,8 +325,7 @@ export default function NewsSection() {
                 <iframe
                   src={selectedVideo.videoUrl}
                   title={selectedVideo.title}
-                  className="w-full h-[60vh]"
-                  frameBorder="0"
+                  className="w-full h-[60vh] border-0"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                   allowFullScreen
                 ></iframe>

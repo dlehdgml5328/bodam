@@ -118,8 +118,14 @@ def save_and_match_incident(self, incident_data: Dict[str, Any]):
                 # session_scope는 자동으로 commit하므로 제거
                 return incident_id
 
-        # asyncio 실행
-        incident_id = asyncio.run(_save())
+        # 기존 event loop 사용 (Celery worker의 loop)
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        incident_id = loop.run_until_complete(_save())
 
         # 뉴스 매칭 워커 호출
         from src.workers.matcher import match_news_and_videos
