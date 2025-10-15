@@ -118,13 +118,15 @@ async def search_videos_node(state: MatcherState) -> MatcherState:
             api_key=os.getenv('YOUTUBE_API_KEY', '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')
         )
 
-        # 날짜 필터 없이 검색 (관련성 높은 영상 우선)
+        # 최근 2주 영상만 검색
+        two_weeks_ago = (datetime.utcnow() - timedelta(days=14)).strftime('%Y-%m-%dT%H:%M:%SZ')
+
         video_results = youtube_client.search(
             query=f"{primary_keyword} 화재",
             max_results=5,
-            order="relevance",  # date → relevance (관련성 우선)
+            order="relevance",
             video_duration="short",
-            published_after=None  # 날짜 필터 제거
+            published_after=two_weeks_ago
         )
 
         logger.info(f"[Node] Found {len(video_results)} videos")

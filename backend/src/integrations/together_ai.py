@@ -20,13 +20,25 @@ class TogetherAISettings:
     api_key: str
     model: str = "meta-llama/Meta-Llama-3.3-70B-Instruct-Turbo"
     base_url: str = "https://api.together.xyz"
+    temperature: float = 0.1
 
     @classmethod
     def from_env(cls) -> "TogetherAISettings":
         api_key = os.getenv("TOGETHER_AI_API_KEY", "test_key")
         model = os.getenv("TOGETHER_AI_MODEL", cls.model)
         base_url = os.getenv("TOGETHER_AI_BASE_URL", cls.base_url)
-        return cls(api_key=api_key, model=model, base_url=base_url)
+        temperature_str = os.getenv("TOGETHER_AI_TEMPERATURE")
+        temperature = cls.temperature
+        if temperature_str is not None:
+            try:
+                temperature = float(temperature_str)
+            except ValueError:
+                logger.warning(
+                    "[TogetherAI] Invalid TOGETHER_AI_TEMPERATURE='%s', falling back to default %.2f",
+                    temperature_str,
+                    cls.temperature,
+                )
+        return cls(api_key=api_key, model=model, base_url=base_url, temperature=temperature)
 
 
 class TogetherAIHttpClient(TogetherAIClient):
@@ -94,7 +106,7 @@ class TogetherAIHttpClient(TogetherAIClient):
                             "content": prompt
                         }
                     ],
-                    "temperature": 0.1,
+                    "temperature": self._settings.temperature,
                     "max_tokens": 2000
                 }
             )

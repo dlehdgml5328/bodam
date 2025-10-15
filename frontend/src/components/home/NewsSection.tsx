@@ -238,21 +238,6 @@ export default function NewsSection() {
                     <p className="text-gray-600 text-sm line-clamp-2">
                       {news.summary}
                     </p>
-                    <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
-                      <div className="flex items-center space-x-4 text-sm text-gray-500">
-                        <span className="flex items-center">
-                          <i className="ri-eye-line mr-1"></i>
-                          {news.views}
-                        </span>
-                        <span className="flex items-center">
-                          <i className="ri-heart-line mr-1"></i>
-                          {news.likes}
-                        </span>
-                      </div>
-                      <div className="w-8 h-8 bg-red-600 bg-red-600/80 rounded-full flex items-center justify-center">
-                        <i className="ri-play-fill text-white text-sm"></i>
-                      </div>
-                    </div>
                   </div>
                 </div>
               ))}
@@ -359,27 +344,19 @@ export default function NewsSection() {
                 </div>
               </div>
               <p className="text-gray-600 leading-relaxed">{selectedVideo.summary}</p>
-              <div className="flex items-center space-x-6 mt-4 pt-4 border-t border-gray-100 text-sm text-gray-500">
-                <span className="flex items-center">
-                  <i className="ri-eye-line mr-2"></i>
-                  조회수 {selectedVideo.views}
-                </span>
-                <span className="flex items-center">
-                  <i className="ri-heart-line mr-2"></i>
-                  좋아요 {selectedVideo.likes}
-                </span>
-                {!selectedVideo.videoUrl && selectedVideo.articleUrl && (
+              {!selectedVideo.videoUrl && selectedVideo.articleUrl && (
+                <div className="flex justify-end mt-4 pt-4 border-t border-gray-100">
                   <a
                     href={selectedVideo.articleUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="ml-auto flex items-center space-x-2 text-red-600 hover:text-red-700 transition-colors duration-200"
+                    className="flex items-center space-x-2 text-red-600 hover:text-red-700 transition-colors duration-200"
                   >
                     <i className="ri-external-link-line"></i>
                     <span>원문 보기</span>
                   </a>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

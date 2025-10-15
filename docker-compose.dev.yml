@@ -255,8 +255,9 @@ services:
     depends_on:
       - backend
     volumes:
-      - ./frontend/src:/app/src:rw
-      - ./frontend/public:/app/public:rw
+      - ./frontend:/app:rw
+      - /app/node_modules
+      - /app/.next
     networks:
       - bodam-network
 
