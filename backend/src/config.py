@@ -5,25 +5,32 @@
 
 import os
 from typing import Optional
+from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
     """애플리케이션 설정"""
-    
+
+    model_config = ConfigDict(
+        env_file=".env",
+        case_sensitive=False,
+        extra="ignore"  # 추가 필드 무시
+    )
+
     # 데이터베이스 설정
     database_url: str = "postgresql+asyncpg://bodam:bodam@localhost:5432/bodam"
     postgres_db: str = "bodam"
     postgres_user: str = "bodam"
     postgres_password: str = "bodam"
-    
+
     # Redis 설정
     redis_url: str = "redis://localhost:6379/0"
-    
+
     # Celery 설정
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = "redis://localhost:6379/0"
-    
+
     # API 설정
     api_host: str = "0.0.0.0"
     api_port: int = 8080
@@ -53,9 +60,6 @@ class Settings(BaseSettings):
     # 환경 구분
     environment: str = "development"
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
 
 
 # 전역 설정 인스턴스
