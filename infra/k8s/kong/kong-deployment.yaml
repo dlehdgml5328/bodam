@@ -1,12 +1,13 @@
+# Kong Gateway Deployment (Replicas = 1)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: kong-gateway
-  namespace: default
   labels:
     app: kong
+    tier: gateway
 spec:
-  replicas: 2
+  replicas: 1  # 단일 Pod
   selector:
     matchLabels:
       app: kong
@@ -14,56 +15,116 @@ spec:
     metadata:
       labels:
         app: kong
+        tier: gateway
     spec:
       containers:
       - name: kong
-        image: kong:3.5-alpine
+        image: kong:3.5
+        imagePullPolicy: Always
+        
+        ports:
+        - containerPort: 8000
+          name: proxy
+        - containerPort: 8001
+          name: admin
+        
         env:
+        # DB-less 모드 설정
         - name: KONG_DATABASE
           value: "off"
+        
+        # Declarative Config 경로
         - name: KONG_DECLARATIVE_CONFIG
           value: "/kong.yaml"
-        - name: KONG_PROXY_ACCESS_LOG
-          value: "/dev/stdout"
-        - name: KONG_ADMIN_ACCESS_LOG
-          value: "/dev/stdout"
-        - name: KONG_PROXY_ERROR_LOG
-          value: "/dev/stderr"
-        - name: KONG_ADMIN_ERROR_LOG
-          value: "/dev/stderr"
+        
+        # 프록시 리스닝 주소
+        - name: KONG_PROXY_LISTEN
+          value: "0.0.0.0:8000"
+        
+        # Admin API 리스닝 주소
         - name: KONG_ADMIN_LISTEN
           value: "0.0.0.0:8001"
-        ports:
-        - name: proxy
-          containerPort: 8000
-          protocol: TCP
-        - name: admin
-          containerPort: 8001
-          protocol: TCP
-        volumeMounts:
-        - name: kong-config
-          mountPath: /kong.yaml
-          subPath: kong-config.yaml
+        
+        # 로그 레벨
+        - name: KONG_LOG_LEVEL
+          value: "info"
+        
+        # Upstream 주소 설정
+        - name: KONG_NGINX_WORKER_PROCESSES
+          value: "2"
+        
+        # 리소스 제한
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        
+        # Health Check
         livenessProbe:
           httpGet:
             path: /status
             port: 8001
           initialDelaySeconds: 30
           periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
         readinessProbe:
           httpGet:
             path: /status
             port: 8001
           initialDelaySeconds: 10
           periodSeconds: 5
-        resources:
-          requests:
-            memory: "256Mi"
-            cpu: "100m"
-          limits:
-            memory: "512Mi"
-            cpu: "500m"
+          timeoutSeconds: 3
+          failureThreshold: 2
+        
+        # ConfigMap 마운트
+        volumeMounts:
+        - name: kong-config
+          mountPath: /kong.yaml
+          subPath: kong.yaml
+          readOnly: true
+      
       volumes:
       - name: kong-config
         configMap:
           name: kong-config
+
+---
+# Kong Proxy Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: kong-proxy-service
+  labels:
+    app: kong
+spec:
+  selector:
+    app: kong
+  ports:
+  - port: 8000
+    targetPort: 8000
+    protocol: TCP
+    name: proxy
+  type: ClusterIP
+
+---
+# Kong Admin Service (내부용)
+apiVersion: v1
+kind: Service
+metadata:
+  name: kong-admin-service
+  labels:
+    app: kong
+spec:
+  selector:
+    app: kong
+  ports:
+  - port: 8001
+    targetPort: 8001
+    protocol: TCP
+    name: admin
+  type: ClusterIP

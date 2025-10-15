@@ -1,0 +1,44 @@
+# 백엔드 ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bodam-config
+data:
+  # Redis 설정
+  redis-url: "redis://redis-service:6379/0"
+  
+  # Celery 설정
+  celery-broker-url: "redis://redis-service:6379/0"
+  celery-result-backend: "redis://redis-service:6379/0"
+  
+  # Kong Gateway 설정
+  kong-admin-url: "http://kong-admin:8001"
+  kong-proxy-url: "http://kong-proxy:8000"
+  
+  # API 설정
+  api-host: "0.0.0.0"
+  api-port: "8080"
+  
+  # Selenium 설정
+  selenium-default-timeout: "30"
+  
+  # 로그 설정
+  log-level: "INFO"
+  log-format: "json"
+
+---
+# 백엔드 Secrets (실제 배포 시 별도 관리)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: bodam-secrets
+type: Opaque
+stringData:
+  # 데이터베이스 URL (실제 값으로 변경 필요)
+  database-url: "postgresql+asyncpg://bodam:CHANGE_ME@postgres-service:5432/bodam"
+  
+  # JWT Secret (실제 값으로 변경 필요)
+  jwt-secret: "CHANGE_ME_TO_SECURE_RANDOM_STRING"
+  
+  # Sentry DSN (선택사항)
+  sentry-dsn: ""
