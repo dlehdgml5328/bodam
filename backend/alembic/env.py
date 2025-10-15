@@ -8,8 +8,10 @@ from alembic import context
 from sqlalchemy import create_engine, pool
 from sqlalchemy.engine import Connection
 
-from src.database.connection import DATABASE_URL
+import os
 from src.models.base import Base
+
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://bodam:bodam@localhost:5432/bodam")
 
 config = context.config
 

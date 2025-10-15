@@ -1,0 +1,332 @@
+openapi: 3.0.3
+info:
+  title: Selenium Crawler API
+  description: API for managing Selenium-based web crawling jobs
+  version: 1.0.0
+  contact:
+    name: BoDam Platform Team
+    email: dev@bodam.example
+
+servers:
+  - url: http://localhost:8000
+    description: Development server
+  - url: https://api.bodam.example
+    description: Production server
+
+paths:
+  /api/crawler/jobs:
+    post:
+      summary: Create a new crawl job
+      description: Submit a new URL to be crawled with Selenium
+      operationId: createCrawlJob
+      tags:
+        - Crawler Jobs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCrawlJobRequest'
+      responses:
+        '201':
+          description: Crawl job created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrawlJob'
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    get:
+      summary: List crawl jobs
+      description: Retrieve a paginated list of crawl jobs
+      operationId: listCrawlJobs
+      tags:
+        - Crawler Jobs
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, running, completed, failed, timeout]
+          description: Filter by job status
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+          description: Number of jobs to return
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+          description: Pagination offset
+      responses:
+        '200':
+          description: List of crawl jobs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrawlJobList'
+
+  /api/crawler/jobs/{job_id}:
+    get:
+      summary: Get crawl job details
+      description: Retrieve details of a specific crawl job
+      operationId: getCrawlJob
+      tags:
+        - Crawler Jobs
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Crawl job ID
+      responses:
+        '200':
+          description: Crawl job details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrawlJobDetail'
+        '404':
+          description: Crawl job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      summary: Cancel crawl job
+      description: Cancel a pending or running crawl job
+      operationId: cancelCrawlJob
+      tags:
+        - Crawler Jobs
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Crawl job cancelled successfully
+        '404':
+          description: Crawl job not found
+        '409':
+          description: Job already completed/failed
+
+  /api/crawler/jobs/{job_id}/retry:
+    post:
+      summary: Retry failed job
+      description: Manually retry a failed or timed-out crawl job
+      operationId: retryCrawlJob
+      tags:
+        - Crawler Jobs
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Job requeued successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrawlJob'
+        '400':
+          description: Job is not in failed/timeout state
+        '404':
+          description: Crawl job not found
+
+  /api/crawler/content/{job_id}:
+    get:
+      summary: Get crawled content
+      description: Retrieve extracted content from a completed crawl job
+      operationId: getCrawledContent
+      tags:
+        - Crawled Content
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Crawled content
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrawledContent'
+        '404':
+          description: Content not found or job not completed
+
+components:
+  schemas:
+    CreateCrawlJobRequest:
+      type: object
+      required:
+        - url
+      properties:
+        url:
+          type: string
+          format: uri
+          maxLength: 2048
+          example: https://news.example.com/fire-incident
+        browser_type:
+          type: string
+          enum: [chrome, firefox]
+          default: chrome
+        wait_conditions:
+          $ref: '#/components/schemas/WaitConditions'
+        max_retries:
+          type: integer
+          minimum: 0
+          maximum: 5
+          default: 3
+        metadata:
+          type: object
+          additionalProperties: true
+          example:
+            source: news_collector
+            tags: [fire, emergency]
+
+    WaitConditions:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum: [element_present, element_visible, page_loaded, custom_script]
+        selector:
+          type: string
+          example: "#main-content"
+        timeout_seconds:
+          type: integer
+          minimum: 5
+          maximum: 60
+          default: 30
+
+    CrawlJob:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        url:
+          type: string
+        browser_type:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, completed, failed, timeout]
+        retry_count:
+          type: integer
+        max_retries:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    CrawlJobDetail:
+      allOf:
+        - $ref: '#/components/schemas/CrawlJob'
+        - type: object
+          properties:
+            wait_conditions:
+              $ref: '#/components/schemas/WaitConditions'
+            error_message:
+              type: string
+              nullable: true
+            metadata:
+              type: object
+              additionalProperties: true
+
+    CrawlJobList:
+      type: object
+      properties:
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/CrawlJob'
+
+    CrawledContent:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        crawl_job_id:
+          type: string
+          format: uuid
+        source_url:
+          type: string
+        extracted_data:
+          type: object
+          additionalProperties: true
+          example:
+            title: "서울 강남구 화재 발생"
+            content: "오늘 오후 강남구에서 화재가 발생했습니다..."
+            publish_date: "2025-10-15T14:30:00Z"
+        screenshot_url:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        detail:
+          type: string
+        status_code:
+          type: integer
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+security:
+  - BearerAuth: []

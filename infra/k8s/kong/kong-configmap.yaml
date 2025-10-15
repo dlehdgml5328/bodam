@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kong-config
+  namespace: default
+data:
+  kong-config.yaml: |
+    # Kong Gateway declarative configuration loaded from specs/002/contracts/kong-gateway-routes.yaml
+    # This file is managed by the deployment process
+    # To update: modify the source file and redeploy

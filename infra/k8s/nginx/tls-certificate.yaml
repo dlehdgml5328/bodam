@@ -1,0 +1,16 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: bodam-tls
+  namespace: default
+spec:
+  secretName: bodam-tls-secret
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - api.bodam.example
+    - app.bodam.example
+  privateKey:
+    algorithm: RSA
+    size: 2048
