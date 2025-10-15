@@ -10,8 +10,10 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from src.database.connection import DATABASE_URL
+import os
 from src.models.base import Base
+
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://bodam:bodam@localhost:5432/bodam")
 
 config = context.config
 

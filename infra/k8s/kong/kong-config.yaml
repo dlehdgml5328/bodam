@@ -7,7 +7,7 @@ _transform: true
 # Services: Backend services that Kong Gateway proxies to
 services:
   - name: bodam-backend
-    url: http://bodam-backend.default.svc.cluster.local:80
+    url: http://172.17.0.1:8080
     connect_timeout: 60000
     write_timeout: 60000
     read_timeout: 60000
@@ -127,7 +127,6 @@ routes:
         config:
           claims_to_verify:
             - exp
-            - role  # Verify admin role
       - name: rate-limiting
         config:
           minute: 200

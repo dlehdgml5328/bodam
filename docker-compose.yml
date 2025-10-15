@@ -1,41 +1,8 @@
-version: '3.9'
+version: '3.8'
 
 services:
-  backend:
-    build:
-      context: ./backend
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
-    environment:
-      - DATABASE_URL=postgresql+psycopg://bodam:bodam@db:5432/bodam
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/1
-    ports:
-      - "8000:8000"
-    depends_on:
-      - db
-      - redis
-    volumes:
-      - ./backend/src:/app/src:rw
-
-  celery-worker:
-    build:
-      context: ./backend
-    command: celery -A src.worker.celery_app worker --loglevel=info
-    depends_on:
-      - db
-      - redis
-    environment:
-      - DATABASE_URL=postgresql+psycopg://bodam:bodam@db:5432/bodam
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/1
-    profiles:
-      - worker
-
-  db:
-    build:
-      context: .
-      dockerfile: infra/docker/db/Dockerfile
+  postgres:
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_DB: bodam
       POSTGRES_USER: bodam
@@ -43,27 +10,41 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres-data:/var/lib/postgresql/data
-      - ./infra/docker/db/initdb:/docker-entrypoint-initdb.d:ro
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
-      interval: 10s
-      timeout: 5s
+      test: ["CMD-SHELL", "pg_isready -U bodam"]
+      interval: 5s
+      timeout: 3s
       retries: 5
 
   redis:
-    image: redis:7.2-alpine
+    image: redis:7-alpine
     ports:
       - "6379:6379"
-    command: redis-server --save 60 1 --loglevel warning
-    volumes:
-      - redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  kong:
+    image: kong:3.5
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /kong.yaml
+      KONG_PROXY_LISTEN: 0.0.0.0:8000
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001
+      KONG_LOG_LEVEL: info
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+    volumes:
+      - ./infra/k8s/kong/kong-config.yaml:/kong.yaml:ro
+    healthcheck:
+      test: ["CMD", "kong", "health"]
       interval: 10s
       timeout: 5s
       retries: 5
 
 volumes:
-  postgres-data:
-  redis-data:
+  postgres_data:

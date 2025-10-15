@@ -13,7 +13,7 @@ from sqlalchemy import Column, String, Text, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID as PGUUID, JSONB, TIMESTAMP
 from sqlalchemy.orm import relationship
 
-from src.database import Base
+from src.models.base import Base
 
 
 class CrawledContent(Base):
@@ -39,7 +39,7 @@ class CrawledContent(Base):
     rendered_html = Column(Text, nullable=True)
     extracted_data = Column(JSONB, nullable=False)
     screenshot_url = Column(String(2048), nullable=True)
-    metadata = Column(JSONB, nullable=True)
+    content_metadata = Column(JSONB, nullable=True)
     created_at = Column(TIMESTAMP(timezone=True), nullable=False, default=datetime.utcnow, index=True)
 
     # Relationship to crawl job
@@ -56,7 +56,7 @@ class CrawledContent(Base):
             "source_url": self.source_url,
             "extracted_data": self.extracted_data,
             "screenshot_url": self.screenshot_url,
-            "metadata": self.metadata,
+            "content_metadata": self.content_metadata,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
