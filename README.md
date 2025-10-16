@@ -165,6 +165,50 @@ JavaScript 렌더링이 필요한 동적 웹페이지를 크롤링합니다:
 - 자동 재시도 (최대 3회)
 - Celery를 통한 비동기 처리
 
+## 연결 풀 (Connection Pooling)
+
+### DB 연결 풀
+- **라이브러리**: SQLAlchemy 2.0 async engine
+- **설정**:
+  - pool_size: 10 (기본 연결)
+  - max_overflow: 20 (최대 확장)
+  - pool_recycle: 3600초 (1시간)
+  - pool_pre_ping: True (연결 유효성 검증)
+  - pool_timeout: 0.4초
+
+### HTTP 연결 풀
+- **라이브러리**: httpx AsyncClient
+- **설정**:
+  - max_connections: 100
+  - max_keepalive_connections: 20
+  - 일반 API: connect=4s, read=8s
+  - 결제 API: connect=180s, read=180s
+- **재시도 정책**: tenacity (최대 3회, 간격 4초)
+
+### 환경 변수 설정
+```bash
+# DB 연결 풀
+DB_POOL_SIZE=10
+DB_MAX_OVERFLOW=20
+DB_POOL_RECYCLE=3600
+DB_POOL_PRE_PING=true
+DB_POOL_TIMEOUT=0.4
+
+# HTTP 연결 풀
+HTTP_MAX_CONNECTIONS=100
+HTTP_MAX_KEEPALIVE_CONNECTIONS=20
+HTTP_CONNECT_TIMEOUT=4.0
+HTTP_READ_TIMEOUT=8.0
+HTTP_PAYMENT_CONNECT_TIMEOUT=180.0
+
+# 재시도 설정
+RETRY_MAX_ATTEMPTS=3
+RETRY_INTERVAL=4.0
+RETRY_EXCLUDED_DOMAINS=api.tosspayments.com,pay.naver.com
+```
+
+자세한 내용은 [specs/003-db-http/](specs/003-db-http/) 참조
+
 ## 프로젝트 구조
 
 ```

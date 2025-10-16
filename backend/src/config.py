@@ -49,7 +49,34 @@ class Settings(BaseSettings):
     selenium_headless: bool = True
     selenium_driver_pool_size: int = 10
     selenium_default_timeout: int = 30
-    
+
+    # === DB 연결 풀 설정 ===
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
+    db_pool_recycle: int = 3600
+    db_pool_pre_ping: bool = True
+    db_pool_timeout: float = 0.4
+
+    # === HTTP 연결 풀 설정 ===
+    http_max_connections: int = 100
+    http_max_keepalive_connections: int = 20
+    http_keepalive_expiry: float = 60.0
+
+    # === HTTP 타임아웃 설정 (일반 API) ===
+    http_connect_timeout: float = 4.0
+    http_read_timeout: float = 8.0
+    http_write_timeout: float = 10.0
+    http_pool_timeout: float = 10.0
+
+    # === HTTP 타임아웃 설정 (결제 API) ===
+    http_payment_connect_timeout: float = 180.0
+    http_payment_read_timeout: float = 180.0
+
+    # === 재시도 설정 ===
+    retry_max_attempts: int = 3
+    retry_interval: float = 4.0
+    retry_excluded_domains: str = "api.tosspayments.com,pay.naver.com"
+
     # 로그 설정
     log_level: str = "INFO"
     log_format: str = "console"  # console 또는 json

@@ -1,4 +1,7 @@
-"""Async SQLAlchemy database session management."""
+"""Async SQLAlchemy database session management with connection pooling.
+
+연결 풀 설정을 포함한 데이터베이스 세션 관리
+"""
 
 from __future__ import annotations
 
@@ -6,12 +9,23 @@ import os
 from contextlib import asynccontextmanager
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from backend.src.config import settings
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql+asyncpg://bodam:bodam@localhost:5432/bodam"
+DATABASE_URL = settings.database_url
+
+# DB 연결 풀 설정 적용
+engine = create_async_engine(
+    DATABASE_URL,
+    future=True,
+    echo=False,
+    # 연결 풀 설정
+    pool_size=settings.db_pool_size,
+    max_overflow=settings.db_max_overflow,
+    pool_recycle=settings.db_pool_recycle,
+    pool_pre_ping=settings.db_pool_pre_ping,
+    pool_timeout=settings.db_pool_timeout,
 )
 
-engine = create_async_engine(DATABASE_URL, future=True, echo=False)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 
