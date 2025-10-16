@@ -38,6 +38,7 @@
 - Docker & Docker Compose
 - Python 3.11+
 - Node.js 18+
+- K6 (부하 테스트용)
 
 ### 로컬 개발 환경 설정
 
@@ -208,6 +209,48 @@ RETRY_EXCLUDED_DOMAINS=api.tosspayments.com,pay.naver.com
 ```
 
 자세한 내용은 [specs/003-db-http/](specs/003-db-http/) 참조
+
+## K6 부하 테스트
+
+### K6 설치
+
+**Ubuntu/Debian**:
+```bash
+sudo gpg -k
+sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+sudo apt-get update
+sudo apt-get install k6
+```
+
+**macOS**:
+```bash
+brew install k6
+```
+
+**Windows**:
+```powershell
+choco install k6
+```
+
+### K6 설치 확인
+```bash
+k6 version
+```
+
+### 부하 테스트 실행
+```bash
+# Baseline 시나리오 (50 VU)
+K6_SCENARIO=baseline k6 run specs/004-hybrid-observability-stack/contracts/k6-scenarios.js
+
+# Target 시나리오 (200 VU - 성공 기준)
+K6_SCENARIO=target BASE_URL=http://localhost:8000 k6 run specs/004-hybrid-observability-stack/contracts/k6-scenarios.js
+
+# Stress 시나리오 (500 VU)
+K6_SCENARIO=stress k6 run specs/004-hybrid-observability-stack/contracts/k6-scenarios.js
+```
+
+자세한 내용은 [specs/004-hybrid-observability-stack/](specs/004-hybrid-observability-stack/) 참조
 
 ## 프로젝트 구조
 

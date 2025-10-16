@@ -1,0 +1,45 @@
+# statsd-exporter 매핑 설정
+# K6 statsd 메트릭을 Prometheus 포맷으로 변환
+
+mappings:
+  # K6 HTTP 요청 메트릭
+  - match: "k6.http_reqs.*"
+    name: "k6_http_reqs_total"
+    labels:
+      scenario: "$1"
+
+  # K6 HTTP 요청 실패
+  - match: "k6.http_req_failed.*"
+    name: "k6_http_req_failed_total"
+    labels:
+      scenario: "$1"
+
+  # K6 HTTP 요청 지연시간
+  - match: "k6.http_req_duration.*"
+    name: "k6_http_req_duration_seconds"
+    labels:
+      scenario: "$1"
+
+  # K6 Virtual Users (VU)
+  - match: "k6.vus.*"
+    name: "k6_vus"
+    labels:
+      scenario: "$1"
+
+  # K6 체크 (검증) 실패
+  - match: "k6.checks.*"
+    name: "k6_checks_total"
+    labels:
+      scenario: "$1"
+      result: "$2"
+
+  # K6 데이터 송수신
+  - match: "k6.data_received.*"
+    name: "k6_data_received_bytes"
+    labels:
+      scenario: "$1"
+
+  - match: "k6.data_sent.*"
+    name: "k6_data_sent_bytes"
+    labels:
+      scenario: "$1"
