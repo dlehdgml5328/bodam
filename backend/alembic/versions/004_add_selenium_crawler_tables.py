@@ -35,7 +35,7 @@ def upgrade() -> None:
         sa.Column('started_at', sa.TIMESTAMP(timezone=True), nullable=True),
         sa.Column('completed_at', sa.TIMESTAMP(timezone=True), nullable=True),
         sa.Column('error_message', sa.Text, nullable=True),
-        sa.Column('metadata', postgresql.JSONB, nullable=True),
+        sa.Column('job_metadata', postgresql.JSONB, nullable=True),
         sa.CheckConstraint("browser_type IN ('chrome', 'firefox')", name='ck_browser_type'),
         sa.CheckConstraint("status IN ('pending', 'running', 'completed', 'failed', 'timeout')", name='ck_status'),
         sa.CheckConstraint('retry_count <= max_retries', name='ck_retry_limit'),

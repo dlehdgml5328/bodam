@@ -23,6 +23,7 @@ from .api import (
     stats,
     webpush,
 )
+from .api.crawler import routes as crawler
 from .api.admin import refunds as admin_refunds, resources as admin_resources, search as admin_search
 from .api.webhooks import toss
 from .middleware.auth import AuthMiddleware
@@ -68,6 +69,7 @@ app.include_router(admin_refunds.router)
 app.include_router(admin_resources.router)
 app.include_router(admin_search.router)
 app.include_router(toss.router)
+app.include_router(crawler.router)
 
 
 @app.get("/")

@@ -10,9 +10,10 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
 
-from src.database import get_db
+from src.database.connection import get_db
 from src.models.selenium_crawl_job import SeleniumCrawlJob, JobStatus
 from src.models.crawled_content import CrawledContent
 from src.api.crawler.schemas import (
@@ -32,7 +33,7 @@ router = APIRouter(prefix="/api/crawler", tags=["crawler"])
 @router.post("/jobs", response_model=CrawlJobResponse, status_code=201)
 async def create_crawl_job(
     request: CreateCrawlJobRequest,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Create a new crawl job
@@ -50,8 +51,8 @@ async def create_crawl_job(
     )
 
     db.add(job)
-    db.commit()
-    db.refresh(job)
+    await db.commit()
+    await db.refresh(job)
 
     logger.info(f"Created crawl job {job.id} for URL: {job.url}")
 
@@ -66,28 +67,32 @@ async def list_crawl_jobs(
     status: Optional[str] = Query(None, description="Filter by status"),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     List crawl jobs with pagination
 
     Optionally filter by status.
     """
-    query = db.query(SeleniumCrawlJob)
+    query = select(SeleniumCrawlJob)
 
     # Filter by status if provided
     if status:
         try:
             job_status = JobStatus(status)
-            query = query.filter(SeleniumCrawlJob.status == job_status)
+            query = query.where(SeleniumCrawlJob.status == job_status)
         except ValueError:
             raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
 
     # Get total count
-    total = query.count()
+    count_query = select(func.count()).select_from(query.subquery())
+    result = await db.execute(count_query)
+    total = result.scalar_one()
 
     # Paginate
-    jobs = query.order_by(SeleniumCrawlJob.created_at.desc()).offset(offset).limit(limit).all()
+    query = query.order_by(SeleniumCrawlJob.created_at.desc()).offset(offset).limit(limit)
+    result = await db.execute(query)
+    jobs = result.scalars().all()
 
     return {
         "total": total,
@@ -100,14 +105,16 @@ async def list_crawl_jobs(
 @router.get("/jobs/{job_id}", response_model=CrawlJobDetailResponse)
 async def get_crawl_job(
     job_id: UUID,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Get crawl job details
 
     Returns detailed information including wait_conditions and error_message.
     """
-    job = db.query(SeleniumCrawlJob).filter(SeleniumCrawlJob.id == job_id).first()
+    query = select(SeleniumCrawlJob).where(SeleniumCrawlJob.id == job_id)
+    result = await db.execute(query)
+    job = result.scalar_one_or_none()
 
     if not job:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
@@ -118,14 +125,16 @@ async def get_crawl_job(
 @router.post("/jobs/{job_id}/retry", response_model=CrawlJobResponse)
 async def retry_crawl_job(
     job_id: UUID,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Manually retry a failed/timed-out job
 
     Resets job to pending status and re-enqueues Celery task.
     """
-    job = db.query(SeleniumCrawlJob).filter(SeleniumCrawlJob.id == job_id).first()
+    query = select(SeleniumCrawlJob).where(SeleniumCrawlJob.id == job_id)
+    result = await db.execute(query)
+    job = result.scalar_one_or_none()
 
     if not job:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
@@ -139,8 +148,8 @@ async def retry_crawl_job(
 
     # Reset job for retry
     job.reset_for_retry()
-    db.commit()
-    db.refresh(job)
+    await db.commit()
+    await db.refresh(job)
 
     logger.info(f"Manually retrying job {job_id}")
 
@@ -153,7 +162,7 @@ async def retry_crawl_job(
 @router.delete("/jobs/{job_id}", status_code=204)
 async def cancel_crawl_job(
     job_id: UUID,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Cancel a pending or running crawl job
@@ -161,7 +170,9 @@ async def cancel_crawl_job(
     Note: Cannot truly cancel a running Celery task,
     but marks job as cancelled in database.
     """
-    job = db.query(SeleniumCrawlJob).filter(SeleniumCrawlJob.id == job_id).first()
+    query = select(SeleniumCrawlJob).where(SeleniumCrawlJob.id == job_id)
+    result = await db.execute(query)
+    job = result.scalar_one_or_none()
 
     if not job:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
@@ -174,7 +185,7 @@ async def cancel_crawl_job(
 
     # Mark as failed with cancellation message
     job.mark_as_failed("Cancelled by user")
-    db.commit()
+    await db.commit()
 
     logger.info(f"Cancelled job {job_id}")
 
@@ -184,7 +195,7 @@ async def cancel_crawl_job(
 @router.get("/content/{job_id}", response_model=CrawledContentResponse)
 async def get_crawled_content(
     job_id: UUID,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Get crawled content for completed job
@@ -192,7 +203,9 @@ async def get_crawled_content(
     Returns extracted structured data.
     """
     # Check if job exists and is completed
-    job = db.query(SeleniumCrawlJob).filter(SeleniumCrawlJob.id == job_id).first()
+    query = select(SeleniumCrawlJob).where(SeleniumCrawlJob.id == job_id)
+    result = await db.execute(query)
+    job = result.scalar_one_or_none()
 
     if not job:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
@@ -204,7 +217,9 @@ async def get_crawled_content(
         )
 
     # Get crawled content
-    content = db.query(CrawledContent).filter(CrawledContent.crawl_job_id == job_id).first()
+    query = select(CrawledContent).where(CrawledContent.crawl_job_id == job_id)
+    result = await db.execute(query)
+    content = result.scalar_one_or_none()
 
     if not content:
         raise HTTPException(status_code=404, detail=f"Content not found for job {job_id}")
