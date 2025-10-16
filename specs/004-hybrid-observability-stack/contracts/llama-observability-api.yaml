@@ -1,0 +1,550 @@
+openapi: 3.0.3
+info:
+  title: Llama Observability Query API
+  description: |
+    Natural language query interface for observability data.
+    Llama AI assistant queries local Prometheus, Loki, and Tempo for <1s response time.
+    Reference: research.md Section 6 (Llama Observability Query Interface)
+  version: 1.0.0
+  contact:
+    name: Bodam Platform Team
+
+servers:
+  - url: http://backend:8000/api/v1
+    description: Backend API server
+
+tags:
+  - name: observability
+    description: Observability query endpoints for Llama AI
+
+paths:
+  /observability/query:
+    post:
+      tags:
+        - observability
+      summary: Natural language query to observability stack
+      description: |
+        Llama AI assistant converts natural language to PromQL/LogQL/TraceQL
+        and queries local observability stack for fast response (<1s).
+
+        Example queries:
+        - "지난 1시간 동안 5XX 에러가 얼마나 발생했어?"
+        - "현재 DB 커넥션 풀 사용량이 얼마야?"
+        - "가장 느린 API 엔드포인트는 뭐야?"
+        - "오늘 발생한 에러 로그 보여줘"
+      operationId: queryObservability
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ObservabilityQueryRequest'
+            examples:
+              error_rate_query:
+                summary: 5XX error rate query
+                value:
+                  query: "지난 1시간 동안 5XX 에러가 얼마나 발생했어?"
+                  time_range: "1h"
+                  language: "ko"
+              connection_pool_query:
+                summary: DB connection pool query
+                value:
+                  query: "현재 DB 커넥션 풀 사용량이 얼마야?"
+                  language: "ko"
+              slow_endpoint_query:
+                summary: Slow endpoint query
+                value:
+                  query: "What are the slowest API endpoints in the last 30 minutes?"
+                  time_range: "30m"
+                  language: "en"
+      responses:
+        '200':
+          description: Query result with AI-generated summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObservabilityQueryResponse'
+              examples:
+                error_rate_response:
+                  summary: 5XX error rate response
+                  value:
+                    query_type: "prometheus"
+                    generated_query: "rate(http_requests_total{status=\"5xx\"}[1h])"
+                    result:
+                      data:
+                        - timestamp: "2024-01-15T10:00:00Z"
+                          value: 0.05
+                      summary: "지난 1시간 동안 5XX 에러가 총 180건 발생했습니다. 초당 평균 0.05건입니다."
+                    response_time_ms: 234
+                    data_source: "local_prometheus"
+        '400':
+          description: Invalid query or unsupported request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Query execution error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /observability/similar-errors:
+    post:
+      tags:
+        - observability
+      summary: Find similar errors using pgvector
+      description: |
+        Uses pgvector similarity search to find similar error messages.
+        Helps identify error patterns and recurring issues.
+      operationId: findSimilarErrors
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimilarErrorRequest'
+      responses:
+        '200':
+          description: List of similar errors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimilarErrorResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /observability/trace/{trace_id}:
+    get:
+      tags:
+        - observability
+      summary: Get trace details by trace ID
+      description: |
+        Retrieves distributed trace from Tempo with all spans.
+        Includes correlation with logs via trace_id.
+      operationId: getTrace
+      parameters:
+        - name: trace_id
+          in: path
+          required: true
+          schema:
+            type: string
+            example: "a1b2c3d4e5f6g7h8"
+          description: OpenTelemetry trace ID (16 or 32 hex characters)
+      responses:
+        '200':
+          description: Trace details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TraceResponse'
+        '404':
+          description: Trace not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /observability/metrics/dashboard:
+    get:
+      tags:
+        - observability
+      summary: Get dashboard metrics summary
+      description: |
+        Real-time dashboard showing key metrics:
+        - HTTP request rate (2xx, 4xx, 5xx)
+        - P95/P99 latency
+        - DB connection pool status
+        - HTTP client pool status
+        - Celery task status
+      operationId: getDashboardMetrics
+      parameters:
+        - name: time_range
+          in: query
+          schema:
+            type: string
+            enum: [5m, 15m, 1h, 6h, 24h]
+            default: "15m"
+      responses:
+        '200':
+          description: Dashboard metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardMetrics'
+
+  /observability/alerts/active:
+    get:
+      tags:
+        - observability
+      summary: Get active alerts
+      description: |
+        Lists current active alerts from Alertmanager.
+        Includes alerts pending Slack notification.
+      operationId: getActiveAlerts
+      responses:
+        '200':
+          description: Active alerts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertList'
+
+  /observability/load-tests:
+    get:
+      tags:
+        - observability
+      summary: List K6 load test runs
+      description: Get history of K6 load test executions with results
+      operationId: listLoadTests
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: scenario
+          in: query
+          schema:
+            type: string
+            enum: [baseline, target, stress, spike]
+      responses:
+        '200':
+          description: Load test history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoadTestList'
+
+    post:
+      tags:
+        - observability
+      summary: Trigger K6 load test
+      description: Start a new K6 load test scenario
+      operationId: triggerLoadTest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoadTestRequest'
+      responses:
+        '202':
+          description: Load test started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoadTestStartResponse'
+
+components:
+  schemas:
+    ObservabilityQueryRequest:
+      type: object
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          description: Natural language query in Korean or English
+          example: "지난 1시간 동안 5XX 에러가 얼마나 발생했어?"
+        time_range:
+          type: string
+          description: Time range for query (default 15m)
+          example: "1h"
+          default: "15m"
+        language:
+          type: string
+          enum: [ko, en]
+          default: "ko"
+        include_traces:
+          type: boolean
+          description: Include related traces in response
+          default: false
+
+    ObservabilityQueryResponse:
+      type: object
+      properties:
+        query_type:
+          type: string
+          enum: [prometheus, loki, tempo, combined]
+          description: Type of observability query executed
+        generated_query:
+          type: string
+          description: Generated PromQL/LogQL/TraceQL query
+          example: "rate(http_requests_total{status=\"5xx\"}[1h])"
+        result:
+          type: object
+          properties:
+            data:
+              type: array
+              items:
+                type: object
+            summary:
+              type: string
+              description: AI-generated summary in requested language
+        response_time_ms:
+          type: integer
+          description: Query execution time in milliseconds
+          example: 234
+        data_source:
+          type: string
+          enum: [local_prometheus, local_loki, local_tempo, grafana_cloud]
+          description: Source of the data
+        related_traces:
+          type: array
+          items:
+            type: string
+          description: Related trace IDs (if include_traces=true)
+
+    SimilarErrorRequest:
+      type: object
+      required:
+        - error_message
+      properties:
+        error_message:
+          type: string
+          description: Error message to find similar errors for
+        limit:
+          type: integer
+          default: 10
+          minimum: 1
+          maximum: 50
+        similarity_threshold:
+          type: number
+          format: float
+          default: 0.8
+          minimum: 0.0
+          maximum: 1.0
+          description: Cosine similarity threshold (0-1)
+
+    SimilarErrorResponse:
+      type: object
+      properties:
+        similar_errors:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              timestamp:
+                type: string
+                format: date-time
+              message:
+                type: string
+              similarity_score:
+                type: number
+                format: float
+              trace_id:
+                type: string
+              resolution_status:
+                type: string
+                enum: [new, analyzing, resolved, ignored]
+
+    TraceResponse:
+      type: object
+      properties:
+        trace_id:
+          type: string
+        spans:
+          type: array
+          items:
+            type: object
+            properties:
+              span_id:
+                type: string
+              parent_span_id:
+                type: string
+              service_name:
+                type: string
+              operation_name:
+                type: string
+              start_time:
+                type: string
+                format: date-time
+              duration_ms:
+                type: number
+              tags:
+                type: object
+                additionalProperties:
+                  type: string
+        logs:
+          type: array
+          description: Correlated logs with same trace_id
+          items:
+            type: object
+
+    DashboardMetrics:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        http:
+          type: object
+          properties:
+            requests_per_second:
+              type: number
+            status_2xx_rate:
+              type: number
+            status_4xx_rate:
+              type: number
+            status_5xx_rate:
+              type: number
+            p95_latency_ms:
+              type: number
+            p99_latency_ms:
+              type: number
+        database:
+          type: object
+          properties:
+            pool_size:
+              type: integer
+            pool_in_use:
+              type: integer
+            pool_available:
+              type: integer
+            pool_waiting:
+              type: integer
+            utilization_percent:
+              type: number
+        http_client:
+          type: object
+          properties:
+            pool_size:
+              type: integer
+            pool_in_use:
+              type: integer
+            waiting_requests:
+              type: integer
+        celery:
+          type: object
+          properties:
+            tasks_per_second:
+              type: number
+            active_tasks:
+              type: integer
+
+    AlertList:
+      type: object
+      properties:
+        active_alerts:
+          type: array
+          items:
+            type: object
+            properties:
+              alert_name:
+                type: string
+              severity:
+                type: string
+                enum: [critical, warning, info]
+              status:
+                type: string
+                enum: [firing, pending, resolved]
+              started_at:
+                type: string
+                format: date-time
+              labels:
+                type: object
+                additionalProperties:
+                  type: string
+              annotations:
+                type: object
+              slack_notified:
+                type: boolean
+
+    LoadTestList:
+      type: object
+      properties:
+        tests:
+          type: array
+          items:
+            $ref: '#/components/schemas/LoadTestRun'
+
+    LoadTestRun:
+      type: object
+      properties:
+        id:
+          type: integer
+        test_id:
+          type: string
+        scenario_name:
+          type: string
+          enum: [baseline, target, stress, spike]
+        target_vu:
+          type: integer
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+        latency_p50:
+          type: number
+        latency_p95:
+          type: number
+        latency_p99:
+          type: number
+        error_rate:
+          type: number
+        total_requests:
+          type: integer
+        requests_per_second:
+          type: number
+        status:
+          type: string
+          enum: [running, passed, failed, aborted]
+
+    LoadTestRequest:
+      type: object
+      required:
+        - scenario_name
+      properties:
+        scenario_name:
+          type: string
+          enum: [baseline, target, stress, spike]
+        base_url:
+          type: string
+          format: uri
+          default: "http://backend:8000"
+
+    LoadTestStartResponse:
+      type: object
+      properties:
+        test_id:
+          type: string
+        scenario_name:
+          type: string
+        status:
+          type: string
+          enum: [running]
+        message:
+          type: string
+          example: "Load test started successfully"
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        detail:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+security:
+  - bearerAuth: []
