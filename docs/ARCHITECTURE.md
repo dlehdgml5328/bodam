@@ -848,12 +848,161 @@ spec:
 
 ---
 
+## 연결 풀 관리 (003-db-http)
+
+### DB 연결 풀 (SQLAlchemy)
+
+**목적:** PostgreSQL 연결 재사용으로 성능 향상 및 리소스 최적화
+
+**설정:**
+```python
+# backend/src/database/connection.py
+engine = create_async_engine(
+    settings.database_url,
+    pool_size=10,              # 기본 연결 풀 크기
+    max_overflow=20,           # 추가 연결 허용 개수
+    pool_recycle=3600,         # 1시간마다 연결 재활용
+    pool_pre_ping=True,        # 연결 사용 전 상태 체크
+    pool_timeout=0.4,          # 대기 타임아웃 (400ms)
+    echo=False
+)
+```
+
+**연결 풀 동작:**
+```
+1. 요청 발생 → SessionLocal() 호출
+2. Pool에서 유휴 연결 할당
+   - 유휴 연결 있음: 즉시 반환
+   - 유휴 연결 없음: 새 연결 생성 (max_overflow 한도 내)
+   - 한도 초과: pool_timeout 동안 대기
+3. 쿼리 실행
+4. session.close() → 연결 반환 (Pool로)
+```
+
+**메트릭스 수집:**
+- `backend/src/database/pool_metrics.py`
+- 풀 크기, 체크아웃 연결 수, 대기 중인 요청 수
+- Prometheus로 수집 가능
+
+### HTTP 연결 풀 (httpx)
+
+**목적:** 외부 API 호출 최적화 (Toss, Naver, YouTube 등)
+
+**설정:**
+```python
+# backend/src/integrations/http_client.py
+http_client = httpx.AsyncClient(
+    limits=httpx.Limits(
+        max_connections=100,           # 최대 동시 연결 수
+        max_keepalive_connections=20,  # Keep-Alive 유지 개수
+        keepalive_expiry=60.0          # Keep-Alive 만료 시간 (초)
+    ),
+    timeout=httpx.Timeout(
+        connect=4.0,    # 연결 타임아웃
+        read=8.0,       # 읽기 타임아웃
+        write=10.0,     # 쓰기 타임아웃
+        pool=10.0       # 풀 대기 타임아웃
+    )
+)
+```
+
+**Keep-Alive 이점:**
+- TCP 핸드셰이크 재사용 → 지연 시간 감소
+- 동일 호스트에 반복 요청 시 효율적
+
+**결제 API 특별 처리:**
+```python
+# Toss Payments는 타임아웃 길게 설정
+payment_client = httpx.AsyncClient(
+    timeout=httpx.Timeout(
+        connect=180.0,
+        read=180.0
+    )
+)
+```
+
+### Retry 정책 (tenacity)
+
+**목적:** 일시적 장애 대응 (네트워크 오류, 타임아웃)
+
+**설정:**
+```python
+# backend/src/integrations/retry_policy.py
+@retry(
+    retry=retry_if_exception_type((
+        httpx.ConnectTimeout,
+        httpx.ReadTimeout,
+        httpx.PoolTimeout
+    )),
+    stop=stop_after_attempt(3),     # 최대 3회 재시도
+    wait=wait_exponential(
+        multiplier=1,
+        min=4,
+        max=60
+    ),                              # 지수 백오프: 4초, 8초, 16초...
+    reraise=True
+)
+async def api_call_with_retry(url):
+    response = await http_client.get(url)
+    return response
+```
+
+**재시도 제외 도메인:**
+- `api.tosspayments.com` - 결제 API (중복 결제 방지)
+- `pay.naver.com` - 네이버 페이 (중복 결제 방지)
+
+**재시도 플로우:**
+```
+1. API 호출
+2. 실패 (타임아웃/연결 오류)
+3. 4초 대기 → 재시도
+4. 실패
+5. 8초 대기 → 재시도
+6. 실패
+7. 16초 대기 → 재시도
+8. 여전히 실패 → 에러 반환
+```
+
+### 성능 테스트
+
+**K6 로드 테스트:**
+```bash
+# 동시 100명, 5분간 연결 풀 부하 테스트
+k6 run backend/tests/performance/connection_pool_load_test.js
+```
+
+**예상 성능:**
+- DB 연결 풀: 초당 1000+ 쿼리 처리
+- HTTP 연결 풀: 초당 500+ API 요청
+- Retry: 일시적 장애 시 90% 이상 복구
+
+### 모니터링 지표
+
+**DB 풀 메트릭스:**
+- `db_pool_size`: 현재 풀 크기
+- `db_pool_checkedout`: 사용 중인 연결 수
+- `db_pool_overflow`: 추가 생성된 연결 수
+- `db_pool_queue_size`: 대기 중인 요청 수
+
+**HTTP 풀 메트릭스:**
+- `http_connections_active`: 활성 연결 수
+- `http_connections_idle`: 유휴 연결 수
+- `http_requests_total`: 총 요청 수
+- `http_request_duration`: 요청 소요 시간
+
+---
+
 ## 기술 스택 요약
 
 ### Backend
 - **Python 3.12+**
 - **FastAPI** (비동기 웹 프레임워크)
 - **SQLAlchemy 2.0** (ORM, asyncpg)
+  - 연결 풀 최적화 (pool_size, max_overflow, pool_recycle)
+- **httpx** (HTTP 클라이언트)
+  - 연결 풀 관리 (max_connections, keepalive)
+- **tenacity** (Retry 정책)
+  - 지수 백오프, 재시도 횟수 제한
 - **Pydantic** (데이터 검증)
 - **Celery** (비동기 작업 큐)
 - **Redis** (캐시 + Celery 브로커)
@@ -1001,5 +1150,8 @@ ruff format .
 
 ---
 
-**작성일:** 2025-10-15
-**버전:** 1.1 (develop 브랜치 기준, Kong Gateway & Selenium 통합)
+**작성일:** 2025-10-16
+**버전:** 1.2 (develop 브랜치 기준)
+**주요 기능:**
+- Kong Gateway & Selenium 크롤러 (002)
+- DB/HTTP 연결 풀 관리 & Retry 정책 (003)
