@@ -29,6 +29,14 @@ spec:
               value: redis://redis-queue-service:6379/0
             - name: CELERY_RESULT_BACKEND
               value: redis://redis-queue-service:6379/1
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-collector.observability.svc.cluster.local:4318
+            - name: OTEL_SERVICE_NAME
+              value: backend-api
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.namespace=bodam,deployment.environment=production
+            - name: OTEL_TRACES_SAMPLER
+              value: always_on
           readinessProbe:
             httpGet:
               path: /readyz

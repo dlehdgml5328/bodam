@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertmanager
+  namespace: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alertmanager
+  template:
+    metadata:
+      labels:
+        app: alertmanager
+    spec:
+      containers:
+        - name: alertmanager
+          image: prom/alertmanager:v0.26.0
+          args:
+            - '--config.file=/etc/alertmanager/alertmanager.yml'
+          ports:
+            - containerPort: 9093
+          volumeMounts:
+            - name: config
+              mountPath: /etc/alertmanager
+            - name: slack-webhook
+              mountPath: /etc/alertmanager/secrets
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+      volumes:
+        - name: config
+          configMap:
+            name: alertmanager-config
+        - name: slack-webhook
+          secret:
+            secretName: alertmanager-slack
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager
+  namespace: observability
+spec:
+  selector:
+    app: alertmanager
+  ports:
+    - port: 9093
+      targetPort: 9093
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-config
+  namespace: observability
+data:
+  alertmanager.yml: |
+    global:
+      resolve_timeout: 5m
+    route:
+      group_by: ['alertname', 'severity']
+      group_wait: 10s
+      group_interval: 10s
+      repeat_interval: 1h
+      receiver: 'slack-bodam-alerts'
+    receivers:
+      - name: 'slack-bodam-alerts'
+        slack_configs:
+          - api_url_file: /etc/alertmanager/secrets/webhook-url
+            channel: '#bodam-alerts'
+            title: '{{ .GroupLabels.alertname }}'
+            text: '{{ range .Alerts }}{{ .Annotations.summary }}\n{{ end }}'
+            send_resolved: true
+  alert-rules.yml: |
+    groups:
+      - name: backend_alerts
+        interval: 15s
+        rules:
+          - alert: ServerError5XX
+            expr: rate(http_requests_total{status="5xx"}[1m]) > 0
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "5XX errors detected"
+          - alert: DBPoolExhausted
+            expr: db_connection_pool_waiting > 0
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "DB pool exhausted"
+          - alert: HighClientErrorRate
+            expr: rate(http_requests_total{status="4xx"}[5m]) / rate(http_requests_total[5m]) > 0.3
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High 4XX rate"
