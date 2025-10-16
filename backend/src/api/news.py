@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import logging
 from datetime import datetime, timedelta
 from typing import Any
@@ -258,13 +259,16 @@ async def _get_video_payload(limit: int) -> list[VideoNewsResponse]:
         from src.models.news_match import NewsMatch
         from src.models.fire_incident import FireIncident
 
+        # 필터링할 키워드 (교육, 훈련 영상 제외)
+        exclude_keywords = ["예담직업전문학교", "교육", "훈련", "체험", "안전테마파크"]
+
         async for session in get_session():
             query = (
                 select(NewsMatch, FireIncident)
                 .join(FireIncident, NewsMatch.incident_id == FireIncident.id)
                 .where(NewsMatch.news_type == "video")
                 .order_by(desc(NewsMatch.matched_at))
-                .limit(limit)
+                .limit(limit * 2)  # 필터링 후 충분한 개수를 위해 더 많이 가져옴
             )
 
             result = await session.execute(query)
@@ -273,6 +277,14 @@ async def _get_video_payload(limit: int) -> list[VideoNewsResponse]:
             if rows:
                 video_list = []
                 for idx, (news_match, incident) in enumerate(rows):
+                    # HTML 엔티티 디코딩
+                    title = html.unescape(news_match.title)
+
+                    # 제외 키워드 필터링
+                    if any(keyword in title for keyword in exclude_keywords):
+                        logger.debug(f"[NewsAPI] Filtered out: {title}")
+                        continue
+
                     # YouTube URL에서 video ID 추출
                     video_id = news_match.news_id
                     if "youtube.com/watch?v=" in news_match.url:
@@ -289,7 +301,7 @@ async def _get_video_payload(limit: int) -> list[VideoNewsResponse]:
 
                     video_list.append(VideoNewsResponse(
                         id=idx + 1,
-                        title=news_match.title,
+                        title=title,
                         thumbnail=thumbnail,
                         duration="00:00",
                         time=time_str,
@@ -302,7 +314,11 @@ async def _get_video_payload(limit: int) -> list[VideoNewsResponse]:
                         video_id=video_id,
                     ))
 
-                logger.info(f"[NewsAPI] Loaded {len(video_list)} videos from news_matches table")
+                    # limit 개수만큼만 반환
+                    if len(video_list) >= limit:
+                        break
+
+                logger.info(f"[NewsAPI] Loaded {len(video_list)} videos from news_matches table (filtered)")
                 return video_list
             else:
                 # DB에 영상이 없으면 빈 배열 반환 (Mock 데이터 사용 안 함)
@@ -339,6 +355,9 @@ async def _get_breaking_payload(limit: int) -> list[BreakingNewsResponse]:
             if rows:
                 news_list = []
                 for news_match, incident in rows:
+                    # HTML 엔티티 디코딩
+                    title = html.unescape(news_match.title)
+
                     # 시간 포맷
                     published_at = news_match.published_at or news_match.matched_at
                     time_str = _format_datetime_obj(published_at) if published_at else ""
@@ -351,7 +370,7 @@ async def _get_breaking_payload(limit: int) -> list[BreakingNewsResponse]:
                         is_breaking = time_diff.total_seconds() < 3600  # 1시간
 
                     news_list.append(BreakingNewsResponse(
-                        title=news_match.title,
+                        title=title,
                         time=time_str,
                         is_breaking=is_breaking,
                         link=news_match.url,
