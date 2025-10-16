@@ -1,0 +1,186 @@
+# HTTP 클라이언트 연결 풀 설정 계약서
+# 목적: httpx AsyncClient 연결 풀 설정 인터페이스 정의
+
+연결_풀_설정:
+  type: object
+  required:
+    - max_connections
+    - max_keepalive_connections
+    - keepalive_expiry
+  properties:
+    max_connections:
+      type: integer
+      description: 전체 최대 동시 연결 개수
+      minimum: 1
+      maximum: 1000
+      default: 100
+      example: 100
+
+    max_keepalive_connections:
+      type: integer
+      description: Keep-Alive 상태로 유지할 최대 연결 개수
+      minimum: 1
+      maximum: max_connections
+      default: 20
+      example: 20
+
+    keepalive_expiry:
+      type: number
+      format: float
+      description: Keep-Alive 연결 만료 시간 (초 단위)
+      minimum: 5.0
+      default: 60.0
+      example: 60.0
+
+타임아웃_설정:
+  일반_API:
+    connect_timeout:
+      type: number
+      description: 연결 수립 최대 대기 시간 (초)
+      default: 4.0
+      example: 4.0
+    read_timeout:
+      type: number
+      description: 응답 읽기 최대 대기 시간 (초)
+      default: 8.0
+      example: 8.0
+    write_timeout:
+      type: number
+      description: 요청 전송 최대 대기 시간 (초)
+      default: 10.0
+      example: 10.0
+    pool_timeout:
+      type: number
+      description: 연결 풀에서 연결 대기 최대 시간 (초)
+      default: 10.0
+      example: 10.0
+
+  결제_API:
+    connect_timeout:
+      type: number
+      default: 180.0
+      example: 180.0
+    read_timeout:
+      type: number
+      default: 180.0
+      example: 180.0
+    write_timeout:
+      type: number
+      default: 180.0
+      example: 180.0
+    pool_timeout:
+      type: number
+      default: 10.0
+      example: 10.0
+
+재시도_정책:
+  max_attempts:
+    type: integer
+    description: 최대 시도 횟수 (최초 1회 + 재시도 2회)
+    minimum: 1
+    maximum: 10
+    default: 3
+    example: 3
+
+  retry_interval:
+    type: number
+    format: float
+    description: 재시도 간격 (초, fixed delay 방식)
+    minimum: 0.1
+    maximum: 60.0
+    default: 4.0
+    example: 4.0
+
+  retryable_methods:
+    type: array
+    description: 재시도 허용 HTTP 메서드 목록
+    items:
+      type: string
+      enum: [GET, PUT, DELETE, POST]
+    default: [GET, PUT, DELETE]
+    example: [GET, PUT, DELETE]
+
+  retryable_exceptions:
+    type: array
+    description: 재시도 허용 예외 타입 목록
+    items:
+      type: string
+    default: [ConnectTimeout, ReadTimeout, NetworkError]
+    example: [ConnectTimeout, ReadTimeout, NetworkError]
+
+  excluded_domains:
+    type: array
+    description: 재시도 제외 도메인 (결제 PG사 등)
+    items:
+      type: string
+    default: [api.tosspayments.com, pay.naver.com]
+    example: [api.tosspayments.com, pay.naver.com]
+
+환경_변수:
+  HTTP_MAX_CONNECTIONS: "100"
+  HTTP_MAX_KEEPALIVE_CONNECTIONS: "20"
+  HTTP_KEEPALIVE_EXPIRY: "60.0"
+  HTTP_CONNECT_TIMEOUT: "4.0"
+  HTTP_READ_TIMEOUT: "8.0"
+  HTTP_WRITE_TIMEOUT: "10.0"
+  HTTP_POOL_TIMEOUT: "10.0"
+  HTTP_PAYMENT_CONNECT_TIMEOUT: "180.0"
+  HTTP_PAYMENT_READ_TIMEOUT: "180.0"
+  RETRY_MAX_ATTEMPTS: "3"
+  RETRY_INTERVAL: "4.0"
+  RETRY_EXCLUDED_DOMAINS: "api.tosspayments.com,pay.naver.com"
+
+검증_규칙:
+  - 규칙: max_keepalive_connections <= max_connections
+    설명: Keep-Alive 연결이 전체 연결보다 많을 수 없음
+  - 규칙: keepalive_expiry >= 5.0
+    설명: 만료 시간이 너무 짧으면 재연결 오버헤드 증가
+  - 규칙: retry_interval * max_attempts < 전체_응답_시간_목표
+    설명: 재시도 시간이 너무 길면 사용자 경험 저하 (일부 API는 예외 허용)
+
+사용_예시: |
+  import httpx
+  from src.integrations.http_client import get_client
+  from src.integrations.retry_policy import fetch_with_retry
+
+  # 일반 API 호출
+  async with get_client("general") as client:
+      response = await fetch_with_retry(
+          client, "GET", "https://api.example.com/data"
+      )
+
+  # 결제 API 호출 (재시도 없음)
+  async with get_client("payment") as client:
+      response = await client.post(
+          "https://api.tosspayments.com/v1/payments",
+          json=payment_data
+      )
+
+에러_시나리오:
+  - 상황: 연결 타임아웃 발생 (서버 응답 없음)
+    에러_타입: httpx.ConnectTimeout
+    동작: 4초 대기 후 재시도 (최대 2회)
+    메시지: "연결 타임아웃, 재시도 중..."
+
+  - 상황: 읽기 타임아웃 발생 (응답이 너무 느림)
+    에러_타입: httpx.ReadTimeout
+    동작: 4초 대기 후 재시도 (최대 2회)
+    메시지: "읽기 타임아웃, 재시도 중..."
+
+  - 상황: 네트워크 오류 발생
+    에러_타입: httpx.NetworkError
+    동작: 4초 대기 후 재시도 (최대 2회)
+    메시지: "네트워크 오류, 재시도 중..."
+
+  - 상황: HTTP 4xx/5xx 에러
+    에러_타입: httpx.HTTPStatusError
+    동작: 재시도 안 함 (클라이언트/서버 오류)
+    메시지: "HTTP 에러, 재시도 불가"
+
+  - 상황: 결제 API 호출 실패
+    동작: 재시도 안 함 (excluded_domains에 포함)
+    메시지: "결제 API는 재시도 금지"
+
+  - 상황: POST 요청 시 idempotency-key 헤더 없음
+    동작: 재시도 안 함 (멱등성 보장 불가)
+    메시지: "멱등성 키 없음, 재시도 불가"
