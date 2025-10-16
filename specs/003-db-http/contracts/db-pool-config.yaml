@@ -1,0 +1,93 @@
+# DB 연결 풀 설정 계약서
+# 목적: SQLAlchemy async engine 연결 풀 설정 인터페이스 정의
+
+config_schema:
+  type: object
+  required:
+    - pool_size
+    - max_overflow
+    - pool_recycle
+    - pool_pre_ping
+    - pool_timeout
+  properties:
+    pool_size:
+      type: integer
+      description: 기본 유지 연결 개수
+      minimum: 1
+      maximum: 100
+      default: 10
+      example: 10
+
+    max_overflow:
+      type: integer
+      description: 추가로 생성 가능한 연결 개수 (총 최대 = pool_size + max_overflow)
+      minimum: 0
+      maximum: 100
+      default: 20
+      example: 20
+
+    pool_recycle:
+      type: integer
+      description: 연결을 재활용할 시간 간격 (초 단위)
+      minimum: 60
+      default: 3600
+      example: 3600
+
+    pool_pre_ping:
+      type: boolean
+      description: 연결 사용 전 유효성 검증 여부
+      default: true
+      example: true
+
+    pool_timeout:
+      type: number
+      format: float
+      description: 연결 대기 시 최대 대기 시간 (초 단위)
+      minimum: 0.1
+      maximum: 10.0
+      default: 0.4
+      example: 0.4
+
+환경_변수:
+  DB_POOL_SIZE: "10"
+  DB_MAX_OVERFLOW: "20"
+  DB_POOL_RECYCLE: "3600"
+  DB_POOL_PRE_PING: "true"
+  DB_POOL_TIMEOUT: "0.4"
+
+검증_규칙:
+  - 규칙: pool_size + max_overflow <= PostgreSQL max_connections
+    설명: 총 연결 개수가 PostgreSQL 서버 설정을 초과하지 않아야 함
+  - 규칙: pool_recycle < PostgreSQL tcp_keepalives_idle
+    설명: 연결 재활용 시간이 PostgreSQL keep-alive 시간보다 짧아야 함
+  - 규칙: pool_timeout > 0.1
+    설명: 대기 시간이 너무 짧으면 항상 실패하므로 최소 0.1초 이상 필요
+
+사용_예시: |
+  from sqlalchemy.ext.asyncio import create_async_engine
+  from src.config import settings
+
+  engine = create_async_engine(
+      settings.database_url,
+      pool_size=settings.db_pool_size,
+      max_overflow=settings.db_max_overflow,
+      pool_recycle=settings.db_pool_recycle,
+      pool_pre_ping=settings.db_pool_pre_ping,
+      pool_timeout=settings.db_pool_timeout,
+  )
+
+에러_시나리오:
+  - 상황: pool_timeout 초과 (대기 시간 내에 연결 확보 실패)
+    에러_타입: sqlalchemy.exc.TimeoutError
+    HTTP_상태코드: 503
+    메시지: "DB 연결 풀 대기 타임아웃"
+
+  - 상황: max_overflow 초과 (모든 연결이 사용 중)
+    에러_타입: sqlalchemy.exc.TimeoutError
+    HTTP_상태코드: 503
+    메시지: "사용 가능한 DB 연결 부족"
+
+  - 상황: pool_pre_ping 실패 (연결이 끊어진 상태)
+    에러_타입: sqlalchemy.exc.OperationalError
+    동작: 자동으로 새 연결 생성
+    메시지: "끊어진 연결 감지, 재생성됨"
