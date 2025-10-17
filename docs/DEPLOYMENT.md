@@ -653,6 +653,12 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - name: Set up Python and install dependencies
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - run: pip install -r backend/requirements.txt
+
       - name: Build Docker image
         run: |
           cd backend
@@ -662,6 +668,10 @@ jobs:
         run: |
           echo ${{ secrets.DO_REGISTRY_TOKEN }} | docker login registry.digitalocean.com -u ${{ secrets.DO_REGISTRY_USER }} --password-stdin
           docker push registry.digitalocean.com/bodam-registry/backend:${{ github.sha }}
+
+      - name: Run tests
+        run: |
+          pytest backend/tests/
 
       - name: Deploy to Kubernetes
         run: |

@@ -40,3 +40,5 @@ opentelemetry-instrumentation-sqlalchemy>=0.42b0
 opentelemetry-instrumentation-httpx>=0.42b0
 opentelemetry-instrumentation-celery>=0.42b0
 opentelemetry-exporter-otlp>=1.21.0
+sqladmin>=0.16.0
+numpy>=1.24.0

@@ -1,3 +1,3 @@
-from . import refunds, resources, search
+from . import chat, refund_actions, refunds, resources, search
 
-__all__ = ["refunds", "resources", "search"]
+__all__ = ["chat", "refund_actions", "refunds", "resources", "search"]

@@ -9,7 +9,7 @@ from typing import Final
 from fastapi import Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.config.security import get_security_settings
+from src.security_config import get_security_settings
 from src.database.connection import get_session
 from src.models.user import User
 from src.security.tokens import TokenDecodeError, create_access_token, decode_access_token

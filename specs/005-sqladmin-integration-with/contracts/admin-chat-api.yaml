@@ -1,0 +1,551 @@
+openapi: 3.0.3
+info:
+  title: Admin Llama AI Chat API
+  description: |
+    SQLAdmin 관리자용 Llama AI 채팅 API
+
+    Together AI의 Llama 3.3 70B Instruct 모델을 사용하여 자연어 쿼리를 SQL로 변환하고,
+    데이터베이스에서 결과를 조회합니다.
+
+    주요 기능:
+    - 자연어 → SQL 변환
+    - 대화 컨텍스트 유지 (세션당 최대 20개 메시지)
+    - Semantic Cache (유사 쿼리 응답 재사용)
+    - 안전한 쿼리 실행 (읽기 전용)
+  version: 1.0.0
+  contact:
+    name: 보담 개발팀
+    email: dev@bodam.example.com
+
+servers:
+  - url: http://localhost:8000
+    description: 로컬 개발 서버
+  - url: https://api.bodam.example.com
+    description: 프로덕션 서버
+
+tags:
+  - name: chat
+    description: Llama AI 채팅
+  - name: session
+    description: 채팅 세션 관리
+
+paths:
+  /admin/api/chat/query:
+    post:
+      tags:
+        - chat
+      summary: 자연어 쿼리 실행
+      description: |
+        사용자의 자연어 질문을 Llama AI가 SQL로 변환하고 실행합니다.
+
+        처리 흐름:
+        1. Semantic Cache 확인 (임베딩 유사도 > 0.95)
+        2. 캐시 히트 시 즉시 응답 반환
+        3. 캐시 미스 시 Llama AI에게 SQL 생성 요청
+        4. 생성된 SQL 안전성 검증 (SELECT만 허용)
+        5. DB 쿼리 실행
+        6. 결과를 캐시에 저장 (TTL: 5분)
+
+        예시 쿼리:
+        - "최근 30일 기부 총액은?"
+        - "서울에 있는 소방서 목록 보여줘"
+        - "상위 10명의 기부자는?"
+      operationId: executeChatQuery
+      security:
+        - AdminSessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatQueryRequest'
+            examples:
+              simple_stats:
+                summary: 간단한 통계 쿼리
+                value:
+                  query: "최근 30일 기부 총액은?"
+                  session_id: "550e8400-e29b-41d4-a716-446655440000"
+              search_query:
+                summary: 검색 쿼리
+                value:
+                  query: "서울에 있는 소방서 목록 보여줘"
+                  session_id: "550e8400-e29b-41d4-a716-446655440000"
+                  max_results: 20
+              top_donors:
+                summary: 상위 N 쿼리
+                value:
+                  query: "상위 10명의 기부자는?"
+                  session_id: "550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '200':
+          description: 쿼리 실행 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatQueryResponse'
+              examples:
+                stats_result:
+                  summary: 통계 쿼리 결과
+                  value:
+                    query: "최근 30일 기부 총액은?"
+                    sql_query: "SELECT SUM(amount) as total FROM donations WHERE created_at >= NOW() - INTERVAL '30 days' AND status = 'completed'"
+                    result:
+                      total: 12500000.00
+                    execution_time_ms: 45.2
+                    cached: false
+                    answer: "최근 30일간 총 12,500,000원의 기부가 완료되었습니다."
+                search_result:
+                  summary: 검색 쿼리 결과
+                  value:
+                    query: "서울에 있는 소방서 목록 보여줘"
+                    sql_query: "SELECT id, name, address, phone FROM fire_stations WHERE region = '서울' AND status = 'active'"
+                    result:
+                      - id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                        name: "종로소방서"
+                        address: "서울특별시 종로구..."
+                        phone: "02-1234-5678"
+                      - id: "f47ac10b-58cc-4372-a567-0e02b2c3d480"
+                        name: "중구소방서"
+                        address: "서울특별시 중구..."
+                        phone: "02-2345-6789"
+                    execution_time_ms: 28.7
+                    cached: false
+                    answer: "서울에는 현재 2개의 활성 소방서가 있습니다."
+                cached_result:
+                  summary: 캐시된 결과
+                  value:
+                    query: "최근 한 달 기부 금액 합계는?"
+                    sql_query: "SELECT SUM(amount) as total FROM donations WHERE created_at >= NOW() - INTERVAL '30 days' AND status = 'completed'"
+                    result:
+                      total: 12500000.00
+                    execution_time_ms: 2.1
+                    cached: true
+                    answer: "최근 30일간 총 12,500,000원의 기부가 완료되었습니다."
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /admin/api/chat/history:
+    get:
+      tags:
+        - session
+      summary: 대화 기록 조회
+      description: |
+        현재 세션의 대화 기록을 조회합니다.
+        최대 20개의 최근 메시지를 반환합니다.
+      operationId: getChatHistory
+      security:
+        - AdminSessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: session_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: 세션 ID
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+            default: 20
+          description: 반환할 메시지 수
+      responses:
+        '200':
+          description: 대화 기록 조회 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatHistoryResponse'
+              example:
+                session_id: "550e8400-e29b-41d4-a716-446655440000"
+                messages:
+                  - role: "user"
+                    content: "최근 30일 기부 총액은?"
+                    timestamp: "2025-10-17T12:00:00Z"
+                    token_count: 15
+                  - role: "assistant"
+                    content: "최근 30일간 총 12,500,000원의 기부가 완료되었습니다."
+                    timestamp: "2025-10-17T12:00:02Z"
+                    token_count: 32
+                    metadata:
+                      sql_query: "SELECT SUM(amount) as total FROM donations WHERE created_at >= NOW() - INTERVAL '30 days' AND status = 'completed'"
+                      execution_time_ms: 45.2
+                created_at: "2025-10-17T11:30:00Z"
+                last_activity_at: "2025-10-17T12:00:02Z"
+                expires_at: "2025-10-17T12:00:00Z"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/api/chat/clear:
+    post:
+      tags:
+        - session
+      summary: 대화 기록 초기화
+      description: |
+        현재 세션의 대화 기록을 모두 삭제합니다.
+        세션 자체는 유지되며, 새로운 대화를 시작할 수 있습니다.
+      operationId: clearChatHistory
+      security:
+        - AdminSessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - session_id
+              properties:
+                session_id:
+                  type: string
+                  format: uuid
+                  description: 세션 ID
+                  example: "550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '200':
+          description: 대화 기록 초기화 성공
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "대화 기록이 초기화되었습니다."
+                  session_id:
+                    type: string
+                    format: uuid
+                    example: "550e8400-e29b-41d4-a716-446655440000"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/api/chat/session:
+    post:
+      tags:
+        - session
+      summary: 새 세션 생성
+      description: |
+        새로운 채팅 세션을 생성합니다.
+        세션은 30분 후 자동으로 만료됩니다.
+      operationId: createChatSession
+      security:
+        - AdminSessionCookie: []
+        - BearerAuth: []
+      responses:
+        '201':
+          description: 세션 생성 성공
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                    format: uuid
+                    example: "550e8400-e29b-41d4-a716-446655440000"
+                  created_at:
+                    type: string
+                    format: date-time
+                    example: "2025-10-17T12:00:00Z"
+                  expires_at:
+                    type: string
+                    format: date-time
+                    example: "2025-10-17T12:30:00Z"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    delete:
+      tags:
+        - session
+      summary: 세션 삭제
+      description: |
+        기존 세션을 삭제합니다.
+        세션과 함께 모든 대화 기록도 삭제됩니다.
+      operationId: deleteChatSession
+      security:
+        - AdminSessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: session_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: 삭제할 세션 ID
+          example: "550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '204':
+          description: 세션 삭제 성공
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    AdminSessionCookie:
+      type: apiKey
+      in: cookie
+      name: admin_session
+      description: 관리자 세션 쿠키
+
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT 토큰 (선택적, API 클라이언트용)
+
+  schemas:
+    ChatQueryRequest:
+      type: object
+      required:
+        - query
+        - session_id
+      properties:
+        query:
+          type: string
+          description: 자연어 질문
+          minLength: 1
+          maxLength: 500
+          example: "최근 30일 기부 총액은?"
+        session_id:
+          type: string
+          format: uuid
+          description: 채팅 세션 ID
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        max_results:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+          description: 반환할 최대 결과 수
+        explain:
+          type: boolean
+          default: false
+          description: true일 경우 SQL EXPLAIN 결과 포함
+
+    ChatQueryResponse:
+      type: object
+      required:
+        - query
+        - result
+        - execution_time_ms
+        - cached
+        - answer
+      properties:
+        query:
+          type: string
+          description: 원본 자연어 쿼리
+          example: "최근 30일 기부 총액은?"
+        sql_query:
+          type: string
+          description: 생성된 SQL 쿼리
+          example: "SELECT SUM(amount) as total FROM donations WHERE created_at >= NOW() - INTERVAL '30 days' AND status = 'completed'"
+        result:
+          description: 쿼리 실행 결과 (JSON 형식)
+          oneOf:
+            - type: object
+            - type: array
+          example:
+            total: 12500000.00
+        execution_time_ms:
+          type: number
+          format: float
+          description: 실행 시간 (밀리초)
+          example: 45.2
+        cached:
+          type: boolean
+          description: 캐시된 결과 여부
+          example: false
+        answer:
+          type: string
+          description: Llama AI가 생성한 자연어 답변
+          example: "최근 30일간 총 12,500,000원의 기부가 완료되었습니다."
+        explain_result:
+          type: string
+          description: SQL EXPLAIN 결과 (explain=true일 때만)
+          example: "Seq Scan on donations  (cost=0.00..35.50 rows=10 width=8)"
+        warning:
+          type: string
+          description: 경고 메시지 (있을 경우)
+          example: "결과가 최대 50개로 제한되었습니다."
+
+    ChatHistoryResponse:
+      type: object
+      required:
+        - session_id
+        - messages
+        - created_at
+        - last_activity_at
+        - expires_at
+      properties:
+        session_id:
+          type: string
+          format: uuid
+          description: 세션 ID
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        messages:
+          type: array
+          description: 대화 메시지 목록 (시간순)
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+        created_at:
+          type: string
+          format: date-time
+          description: 세션 생성 시각
+          example: "2025-10-17T11:30:00Z"
+        last_activity_at:
+          type: string
+          format: date-time
+          description: 마지막 활동 시각
+          example: "2025-10-17T12:00:02Z"
+        expires_at:
+          type: string
+          format: date-time
+          description: 세션 만료 시각
+          example: "2025-10-17T12:00:00Z"
+
+    ChatMessage:
+      type: object
+      required:
+        - role
+        - content
+        - timestamp
+      properties:
+        role:
+          type: string
+          enum: [user, assistant]
+          description: 메시지 역할
+          example: "user"
+        content:
+          type: string
+          description: 메시지 내용
+          example: "최근 30일 기부 총액은?"
+        timestamp:
+          type: string
+          format: date-time
+          description: 메시지 전송 시각
+          example: "2025-10-17T12:00:00Z"
+        token_count:
+          type: integer
+          minimum: 0
+          description: 토큰 수 (대략적)
+          example: 15
+        metadata:
+          type: object
+          description: 메타데이터 (SQL 쿼리, 실행 시간 등)
+          additionalProperties: true
+          example:
+            sql_query: "SELECT SUM(amount) as total FROM donations WHERE created_at >= NOW() - INTERVAL '30 days' AND status = 'completed'"
+            execution_time_ms: 45.2
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: 에러 코드
+          example: "INVALID_QUERY"
+        message:
+          type: string
+          description: 에러 메시지
+          example: "쿼리를 파싱할 수 없습니다."
+        details:
+          type: object
+          description: 에러 상세 정보
+          additionalProperties: true
+
+  responses:
+    BadRequest:
+      description: 잘못된 요청
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "INVALID_QUERY"
+            message: "쿼리가 비어있습니다."
+
+    Unauthorized:
+      description: 인증 실패
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "UNAUTHORIZED"
+            message: "로그인이 필요합니다."
+
+    Forbidden:
+      description: 권한 부족
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "FORBIDDEN"
+            message: "관리자 권한이 필요합니다."
+
+    NotFound:
+      description: 리소스 없음
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "NOT_FOUND"
+            message: "세션을 찾을 수 없습니다."
+
+    TooManyRequests:
+      description: 요청 한도 초과
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "RATE_LIMIT_EXCEEDED"
+            message: "분당 요청 한도를 초과했습니다. 잠시 후 다시 시도하세요."
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+          description: 재시도 가능 시간 (초)
+          example: 60
+
+    InternalServerError:
+      description: 서버 오류
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "INTERNAL_ERROR"
+            message: "쿼리 실행 중 오류가 발생했습니다."
+            details:
+              sql_error: "syntax error at or near \"SLECT\""
+
+security:
+  - AdminSessionCookie: []

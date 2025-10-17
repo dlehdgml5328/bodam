@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.config.security import get_security_settings
+from src.security_config import get_security_settings
 from src.database.connection import get_session
 from src.models.user import User
 from src.security.passwords import hash_password, verify_password

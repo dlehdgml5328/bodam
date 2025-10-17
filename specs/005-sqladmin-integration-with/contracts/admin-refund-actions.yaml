@@ -1,0 +1,850 @@
+openapi: 3.0.3
+info:
+  title: Admin Refund Actions API
+  description: |
+    SQLAdmin 환불 관리 액션 API
+
+    환불 요청을 개별 또는 대량(bulk)으로 승인/거부하는 API입니다.
+    모든 액션은 감사 로그에 기록됩니다.
+
+    주요 기능:
+    - 개별 환불 승인/거부
+    - 대량 환불 승인/거부 (bulk actions)
+    - 환불 내역 조회
+    - 감사 로그 기록
+  version: 1.0.0
+  contact:
+    name: 보담 개발팀
+    email: dev@bodam.example.com
+
+servers:
+  - url: http://localhost:8000
+    description: 로컬 개발 서버
+  - url: https://api.bodam.example.com
+    description: 프로덕션 서버
+
+tags:
+  - name: refund-actions
+    description: 환불 액션
+  - name: audit-log
+    description: 감사 로그
+
+paths:
+  /admin/api/refunds/bulk-approve:
+    post:
+      tags:
+        - refund-actions
+      summary: 환불 대량 승인
+      description: |
+        여러 환불 요청을 한 번에 승인합니다.
+
+        처리 흐름:
+        1. 환불 ID 목록 검증 (모두 pending 상태인지 확인)
+        2. 각 환불에 대해 Toss Payments API 환불 요청
+        3. 성공한 환불은 approved 상태로 변경
+        4. 실패한 환불은 에러 메시지와 함께 반환
+        5. 감사 로그 기록
+
+        주의사항:
+        - 최대 100개까지 한 번에 처리 가능
+        - 부분 성공 가능 (일부는 성공, 일부는 실패)
+        - 트랜잭션 보장 안 됨 (외부 API 호출 포함)
+      operationId: bulkApproveRefunds
+      security:
+        - AdminSessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkRefundActionRequest'
+            example:
+              refund_ids:
+                - "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                - "f47ac10b-58cc-4372-a567-0e02b2c3d480"
+                - "f47ac10b-58cc-4372-a567-0e02b2c3d481"
+              reason: "정상적인 환불 요청으로 확인됨"
+      responses:
+        '200':
+          description: 대량 승인 처리 완료 (부분 성공 포함)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkRefundActionResponse'
+              examples:
+                all_success:
+                  summary: 모두 성공
+                  value:
+                    success_count: 3
+                    failure_count: 0
+                    total_count: 3
+                    results:
+                      - refund_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                        success: true
+                        status: "approved"
+                        message: "환불이 승인되었습니다."
+                      - refund_id: "f47ac10b-58cc-4372-a567-0e02b2c3d480"
+                        success: true
+                        status: "approved"
+                        message: "환불이 승인되었습니다."
+                      - refund_id: "f47ac10b-58cc-4372-a567-0e02b2c3d481"
+                        success: true
+                        status: "approved"
+                        message: "환불이 승인되었습니다."
+                    processed_at: "2025-10-17T12:00:00Z"
+                    processed_by: "550e8400-e29b-41d4-a716-446655440000"
+                partial_success:
+                  summary: 부분 성공
+                  value:
+                    success_count: 2
+                    failure_count: 1
+                    total_count: 3
+                    results:
+                      - refund_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                        success: true
+                        status: "approved"
+                        message: "환불이 승인되었습니다."
+                      - refund_id: "f47ac10b-58cc-4372-a567-0e02b2c3d480"
+                        success: false
+                        status: "pending"
+                        message: "Toss API 오류: 이미 환불된 결제입니다."
+                        error_code: "ALREADY_REFUNDED"
+                      - refund_id: "f47ac10b-58cc-4372-a567-0e02b2c3d481"
+                        success: true
+                        status: "approved"
+                        message: "환불이 승인되었습니다."
+                    processed_at: "2025-10-17T12:00:00Z"
+                    processed_by: "550e8400-e29b-41d4-a716-446655440000"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /admin/api/refunds/bulk-reject:
+    post:
+      tags:
+        - refund-actions
+      summary: 환불 대량 거부
+      description: |
+        여러 환불 요청을 한 번에 거부합니다.
+
+        처리 흐름:
+        1. 환불 ID 목록 검증 (모두 pending 상태인지 확인)
+        2. 각 환불을 rejected 상태로 변경
+        3. 거부 사유와 검토자 정보 기록
+        4. 사용자에게 거부 알림 발송
+        5. 감사 로그 기록
+
+        주의사항:
+        - 최대 100개까지 한 번에 처리 가능
+        - 거부 사유는 필수 입력
+        - 거부된 환불은 재신청 가능
+      operationId: bulkRejectRefunds
+      security:
+        - AdminSessionCookie: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkRefundActionRequest'
+            example:
+              refund_ids:
+                - "f47ac10b-58cc-4372-a567-0e02b2c3d482"
+                - "f47ac10b-58cc-4372-a567-0e02b2c3d483"
+              reason: "환불 요청 사유가 부적절함"
+      responses:
+        '200':
+          description: 대량 거부 처리 완료
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkRefundActionResponse'
+              example:
+                success_count: 2
+                failure_count: 0
+                total_count: 2
+                results:
+                  - refund_id: "f47ac10b-58cc-4372-a567-0e02b2c3d482"
+                    success: true
+                    status: "rejected"
+                    message: "환불이 거부되었습니다."
+                  - refund_id: "f47ac10b-58cc-4372-a567-0e02b2c3d483"
+                    success: true
+                    status: "rejected"
+                    message: "환불이 거부되었습니다."
+                processed_at: "2025-10-17T12:00:00Z"
+                processed_by: "550e8400-e29b-41d4-a716-446655440000"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /admin/api/refunds/{refund_id}/approve:
+    post:
+      tags:
+        - refund-actions
+      summary: 개별 환불 승인
+      description: |
+        단일 환불 요청을 승인합니다.
+
+        처리 흐름:
+        1. 환불 ID 검증 (pending 상태인지 확인)
+        2. Toss Payments API 환불 요청
+        3. 성공 시 approved 상태로 변경
+        4. 사용자에게 승인 알림 발송
+        5. 감사 로그 기록
+      operationId: approveRefund
+      security:
+        - AdminSessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: refund_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: 환불 ID
+          example: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SingleRefundActionRequest'
+            example:
+              reason: "정상적인 환불 요청으로 확인됨"
+      responses:
+        '200':
+          description: 환불 승인 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefundActionResult'
+              example:
+                refund_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                status: "approved"
+                message: "환불이 승인되었습니다."
+                reviewed_by: "550e8400-e29b-41d4-a716-446655440000"
+                reviewed_at: "2025-10-17T12:00:00Z"
+                toss_refund_key: "toss_refund_abc123"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /admin/api/refunds/{refund_id}/reject:
+    post:
+      tags:
+        - refund-actions
+      summary: 개별 환불 거부
+      description: |
+        단일 환불 요청을 거부합니다.
+
+        처리 흐름:
+        1. 환불 ID 검증 (pending 상태인지 확인)
+        2. rejected 상태로 변경
+        3. 거부 사유와 검토자 정보 기록
+        4. 사용자에게 거부 알림 발송
+        5. 감사 로그 기록
+      operationId: rejectRefund
+      security:
+        - AdminSessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: refund_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: 환불 ID
+          example: "f47ac10b-58cc-4372-a567-0e02b2c3d482"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SingleRefundActionRequest'
+            example:
+              reason: "환불 요청 사유가 부적절함"
+      responses:
+        '200':
+          description: 환불 거부 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefundActionResult'
+              example:
+                refund_id: "f47ac10b-58cc-4372-a567-0e02b2c3d482"
+                status: "rejected"
+                message: "환불이 거부되었습니다."
+                reviewed_by: "550e8400-e29b-41d4-a716-446655440000"
+                reviewed_at: "2025-10-17T12:00:00Z"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /admin/api/refunds/{refund_id}:
+    get:
+      tags:
+        - refund-actions
+      summary: 환불 상세 조회
+      description: |
+        환불 요청의 상세 정보를 조회합니다.
+        관련 기부 정보와 사용자 정보도 함께 반환합니다.
+      operationId: getRefundDetail
+      security:
+        - AdminSessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: refund_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: 환불 ID
+          example: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+      responses:
+        '200':
+          description: 환불 상세 정보
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefundDetail'
+              example:
+                id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                donation_id: "d47ac10b-58cc-4372-a567-0e02b2c3d479"
+                reason: "실수로 잘못 기부했습니다."
+                amount: 50000.00
+                status: "approved"
+                reviewer_id: "550e8400-e29b-41d4-a716-446655440000"
+                reviewed_at: "2025-10-17T12:00:00Z"
+                created_at: "2025-10-17T10:00:00Z"
+                donation:
+                  id: "d47ac10b-58cc-4372-a567-0e02b2c3d479"
+                  amount: 50000.00
+                  status: "refunded"
+                  toss_order_id: "order_abc123"
+                  created_at: "2025-10-16T15:00:00Z"
+                user:
+                  id: "u47ac10b-58cc-4372-a567-0e02b2c3d479"
+                  email: "user@example.com"
+                  name: "홍길동"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/api/audit-logs/refunds:
+    get:
+      tags:
+        - audit-log
+      summary: 환불 감사 로그 조회
+      description: |
+        환불 관련 모든 액션의 감사 로그를 조회합니다.
+        - 승인/거부 액션
+        - 처리자 정보
+        - 처리 시각
+      operationId: getRefundAuditLogs
+      security:
+        - AdminSessionCookie: []
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            minimum: 10
+            maximum: 100
+            default: 20
+        - name: action
+          in: query
+          schema:
+            type: string
+            enum: [approve, reject]
+          description: 액션 필터
+        - name: reviewer_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: 검토자 ID 필터
+        - name: start_date
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: 시작 날짜 필터
+        - name: end_date
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: 종료 날짜 필터
+      responses:
+        '200':
+          description: 감사 로그 목록
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogResponse'
+              example:
+                logs:
+                  - id: "log_001"
+                    action: "bulk_approve"
+                    refund_ids:
+                      - "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                      - "f47ac10b-58cc-4372-a567-0e02b2c3d480"
+                    reviewer_id: "550e8400-e29b-41d4-a716-446655440000"
+                    reviewer_email: "admin@bodam.example.com"
+                    reason: "정상적인 환불 요청으로 확인됨"
+                    success_count: 2
+                    failure_count: 0
+                    created_at: "2025-10-17T12:00:00Z"
+                  - id: "log_002"
+                    action: "approve"
+                    refund_ids:
+                      - "f47ac10b-58cc-4372-a567-0e02b2c3d481"
+                    reviewer_id: "550e8400-e29b-41d4-a716-446655440000"
+                    reviewer_email: "admin@bodam.example.com"
+                    reason: "확인 완료"
+                    success_count: 1
+                    failure_count: 0
+                    created_at: "2025-10-17T11:30:00Z"
+                pagination:
+                  page: 1
+                  page_size: 20
+                  total_count: 2
+                  total_pages: 1
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    AdminSessionCookie:
+      type: apiKey
+      in: cookie
+      name: admin_session
+      description: 관리자 세션 쿠키
+
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT 토큰 (선택적, API 클라이언트용)
+
+  schemas:
+    BulkRefundActionRequest:
+      type: object
+      required:
+        - refund_ids
+        - reason
+      properties:
+        refund_ids:
+          type: array
+          description: 환불 ID 목록
+          minItems: 1
+          maxItems: 100
+          items:
+            type: string
+            format: uuid
+          example:
+            - "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+            - "f47ac10b-58cc-4372-a567-0e02b2c3d480"
+        reason:
+          type: string
+          description: 처리 사유
+          minLength: 5
+          maxLength: 500
+          example: "정상적인 환불 요청으로 확인됨"
+
+    SingleRefundActionRequest:
+      type: object
+      required:
+        - reason
+      properties:
+        reason:
+          type: string
+          description: 처리 사유
+          minLength: 5
+          maxLength: 500
+          example: "정상적인 환불 요청으로 확인됨"
+
+    BulkRefundActionResponse:
+      type: object
+      required:
+        - success_count
+        - failure_count
+        - total_count
+        - results
+        - processed_at
+        - processed_by
+      properties:
+        success_count:
+          type: integer
+          minimum: 0
+          description: 성공 건수
+          example: 2
+        failure_count:
+          type: integer
+          minimum: 0
+          description: 실패 건수
+          example: 1
+        total_count:
+          type: integer
+          minimum: 1
+          description: 전체 건수
+          example: 3
+        results:
+          type: array
+          description: 개별 처리 결과
+          items:
+            $ref: '#/components/schemas/RefundActionResultItem'
+        processed_at:
+          type: string
+          format: date-time
+          description: 처리 시각
+          example: "2025-10-17T12:00:00Z"
+        processed_by:
+          type: string
+          format: uuid
+          description: 처리자 ID
+          example: "550e8400-e29b-41d4-a716-446655440000"
+
+    RefundActionResultItem:
+      type: object
+      required:
+        - refund_id
+        - success
+        - status
+        - message
+      properties:
+        refund_id:
+          type: string
+          format: uuid
+          description: 환불 ID
+          example: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+        success:
+          type: boolean
+          description: 성공 여부
+          example: true
+        status:
+          type: string
+          enum: [pending, approved, rejected]
+          description: 처리 후 상태
+          example: "approved"
+        message:
+          type: string
+          description: 처리 메시지
+          example: "환불이 승인되었습니다."
+        error_code:
+          type: string
+          description: 에러 코드 (실패 시)
+          example: "ALREADY_REFUNDED"
+
+    RefundActionResult:
+      type: object
+      required:
+        - refund_id
+        - status
+        - message
+        - reviewed_by
+        - reviewed_at
+      properties:
+        refund_id:
+          type: string
+          format: uuid
+          description: 환불 ID
+          example: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+        status:
+          type: string
+          enum: [pending, approved, rejected]
+          description: 처리 후 상태
+          example: "approved"
+        message:
+          type: string
+          description: 처리 메시지
+          example: "환불이 승인되었습니다."
+        reviewed_by:
+          type: string
+          format: uuid
+          description: 검토자 ID
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        reviewed_at:
+          type: string
+          format: date-time
+          description: 검토 시각
+          example: "2025-10-17T12:00:00Z"
+        toss_refund_key:
+          type: string
+          description: Toss 환불 키 (승인 시)
+          example: "toss_refund_abc123"
+
+    RefundDetail:
+      type: object
+      required:
+        - id
+        - donation_id
+        - reason
+        - amount
+        - status
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: 환불 ID
+        donation_id:
+          type: string
+          format: uuid
+          description: 기부 ID
+        reason:
+          type: string
+          description: 환불 사유
+        amount:
+          type: number
+          format: decimal
+          description: 환불 금액
+        status:
+          type: string
+          enum: [pending, approved, rejected]
+          description: 환불 상태
+        reviewer_id:
+          type: string
+          format: uuid
+          description: 검토자 ID
+        reviewed_at:
+          type: string
+          format: date-time
+          description: 검토 시각
+        created_at:
+          type: string
+          format: date-time
+          description: 생성 시각
+        donation:
+          type: object
+          description: 관련 기부 정보
+          properties:
+            id:
+              type: string
+              format: uuid
+            amount:
+              type: number
+              format: decimal
+            status:
+              type: string
+            toss_order_id:
+              type: string
+            created_at:
+              type: string
+              format: date-time
+        user:
+          type: object
+          description: 사용자 정보
+          properties:
+            id:
+              type: string
+              format: uuid
+            email:
+              type: string
+              format: email
+            name:
+              type: string
+
+    AuditLogResponse:
+      type: object
+      required:
+        - logs
+        - pagination
+      properties:
+        logs:
+          type: array
+          description: 감사 로그 목록
+          items:
+            $ref: '#/components/schemas/AuditLogEntry'
+        pagination:
+          $ref: '#/components/schemas/PaginationInfo'
+
+    AuditLogEntry:
+      type: object
+      required:
+        - id
+        - action
+        - refund_ids
+        - reviewer_id
+        - reviewer_email
+        - reason
+        - success_count
+        - failure_count
+        - created_at
+      properties:
+        id:
+          type: string
+          description: 로그 ID
+          example: "log_001"
+        action:
+          type: string
+          enum: [approve, reject, bulk_approve, bulk_reject]
+          description: 액션 유형
+        refund_ids:
+          type: array
+          description: 처리된 환불 ID 목록
+          items:
+            type: string
+            format: uuid
+        reviewer_id:
+          type: string
+          format: uuid
+          description: 검토자 ID
+        reviewer_email:
+          type: string
+          format: email
+          description: 검토자 이메일
+        reason:
+          type: string
+          description: 처리 사유
+        success_count:
+          type: integer
+          minimum: 0
+          description: 성공 건수
+        failure_count:
+          type: integer
+          minimum: 0
+          description: 실패 건수
+        created_at:
+          type: string
+          format: date-time
+          description: 로그 생성 시각
+
+    PaginationInfo:
+      type: object
+      required:
+        - page
+        - page_size
+        - total_count
+        - total_pages
+      properties:
+        page:
+          type: integer
+          minimum: 1
+          example: 1
+        page_size:
+          type: integer
+          minimum: 10
+          maximum: 100
+          example: 20
+        total_count:
+          type: integer
+          minimum: 0
+          example: 150
+        total_pages:
+          type: integer
+          minimum: 0
+          example: 8
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: 에러 코드
+          example: "INVALID_STATUS"
+        message:
+          type: string
+          description: 에러 메시지
+          example: "환불이 이미 처리되었습니다."
+        details:
+          type: object
+          description: 에러 상세 정보
+          additionalProperties: true
+
+  responses:
+    BadRequest:
+      description: 잘못된 요청
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "INVALID_STATUS"
+            message: "환불이 이미 처리되었습니다."
+
+    Unauthorized:
+      description: 인증 실패
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "UNAUTHORIZED"
+            message: "로그인이 필요합니다."
+
+    Forbidden:
+      description: 권한 부족
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "FORBIDDEN"
+            message: "관리자 권한이 필요합니다."
+
+    NotFound:
+      description: 리소스 없음
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "NOT_FOUND"
+            message: "환불을 찾을 수 없습니다."
+
+    InternalServerError:
+      description: 서버 오류
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "INTERNAL_ERROR"
+            message: "환불 처리 중 오류가 발생했습니다."
+            details:
+              toss_error: "결제 정보를 찾을 수 없습니다."
+
+security:
+  - AdminSessionCookie: []
