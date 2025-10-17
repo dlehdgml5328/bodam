@@ -97,8 +97,27 @@ export default function LoginPage() {
     void submit();
   };
 
-  const handleSocialLogin = (provider: 'google' | 'kakao' | 'naver') => {
-    setErrorMessage('소셜 로그인은 아직 준비 중입니다.');
+  const handleSocialLogin = async (provider: 'google' | 'kakao' | 'naver') => {
+    setErrorMessage('');
+    try {
+      // 1. Get authorization URL from backend
+      const response = await apiRequest<{ authorization_url: string; state: string }>(
+        `/auth/social/${provider}`,
+        { method: 'GET' }
+      );
+
+      // 2. Save state to sessionStorage for verification
+      sessionStorage.setItem(`oauth_state_${provider}`, response.state);
+
+      // 3. Redirect to OAuth provider
+      window.location.href = response.authorization_url;
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setErrorMessage(error.message);
+      } else {
+        setErrorMessage('소셜 로그인 중 문제가 발생했습니다.');
+      }
+    }
   };
 
   return (

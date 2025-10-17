@@ -344,6 +344,55 @@ class DonationService:
         await self._session.flush()
         return subscription
 
+    async def get_donation_by_order_id(self, order_id: str) -> Donation:
+        """주문 ID로 기부 조회"""
+        result = await self._session.execute(
+            select(Donation).where(Donation.toss_order_id == order_id)
+        )
+        donation = result.scalar_one_or_none()
+        if donation is None:
+            raise DonationNotFoundError(f"Order ID: {order_id}")
+        return donation
+
+    async def complete_donation(
+        self,
+        *,
+        donation_id: uuid.UUID,
+        payment_key: str,
+        payment_method: str,
+        approved_at: datetime,
+    ) -> Donation:
+        """기부 완료 처리"""
+        donation = await self.get_donation(donation_id)
+        donation.status = DonationStatus.COMPLETED
+        donation.toss_payment_key = payment_key
+        donation.payment_method = payment_method
+        donation.completed_at = approved_at
+        await self._session.flush()
+        return donation
+
+    async def get_subscription_by_customer_key(
+        self, customer_key: str
+    ) -> DonationSubscription | None:
+        """고객 키로 구독 조회"""
+        result = await self._session.execute(
+            select(DonationSubscription).where(
+                DonationSubscription.toss_customer_key == customer_key
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def update_subscription_billing_key(
+        self, *, subscription_id: uuid.UUID, billing_key: str
+    ) -> DonationSubscription:
+        """구독에 빌링키 업데이트"""
+        subscription = await self._session.get(DonationSubscription, subscription_id)
+        if subscription is None:
+            raise SubscriptionNotFoundError(str(subscription_id))
+        subscription.toss_billing_key = billing_key
+        await self._session.flush()
+        return subscription
+
     async def _maybe_create_billing_authorization(
         self,
         *,

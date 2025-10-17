@@ -17,6 +17,7 @@ from .api import (
     live,
     messages,
     news,
+    payments,
     rankings,
     refunds,
     stations,
@@ -27,7 +28,9 @@ from .api.crawler import routes as crawler
 from .api.admin import refunds as admin_refunds, resources as admin_resources, search as admin_search
 from .api.webhooks import toss
 from .middleware.auth import AuthMiddleware
+from .middleware.rate_limiter import RateLimitMiddleware
 from .config.security import get_security_settings
+import os
 
 app = FastAPI(title="BoDam API")
 
@@ -45,11 +48,19 @@ app.add_middleware(
 
 # Add other middleware (order matters - last added runs first)
 app.add_middleware(AuthMiddleware)
-# Rate limiting 일시적으로 비활성화 (개발 중)
-# app.add_middleware(RateLimitMiddleware)
+
+# Rate limiting (활성화 여부는 환경변수로 제어)
+rate_limiting_enabled = os.getenv("ENABLE_RATE_LIMITING", "false").lower() == "true"
+if rate_limiting_enabled:
+    redis_url = os.getenv("REDIS_CACHE_URL", "redis://localhost:6379/0")
+    print(f"✅ Rate Limiting ENABLED: {redis_url}")
+    app.add_middleware(RateLimitMiddleware, redis_url=redis_url)
+else:
+    print("⚠️  Rate Limiting DISABLED")
 
 app.include_router(auth.router)
 app.include_router(donations.router)
+app.include_router(payments.router)
 app.include_router(stations.router)
 app.include_router(stats.router)
 app.include_router(rankings.router)

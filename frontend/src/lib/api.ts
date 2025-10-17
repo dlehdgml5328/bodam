@@ -16,6 +16,37 @@ const apiBaseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL || DEFAULT_API_BASE_URL
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
+let isRefreshing = false;
+let refreshPromise: Promise<void> | null = null;
+
+async function refreshAccessToken(): Promise<void> {
+  const refreshUrl = `${apiBaseUrl}/auth/refresh`;
+
+  const response = await fetch(refreshUrl, {
+    method: 'POST',
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    // Refresh token도 만료됨 - 로그인 페이지로 이동
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('isLoggedIn');
+      localStorage.removeItem('loggedInEmail');
+      localStorage.removeItem('loggedInName');
+      window.location.href = '/login?redirect=' + encodeURIComponent(window.location.pathname);
+    }
+    throw new Error('세션이 만료되었습니다. 다시 로그인해주세요.');
+  }
+
+  const data = await response.json();
+
+  // 새 access token과 csrf token을 sessionStorage에 저장
+  if (typeof window !== 'undefined' && data.access_token && data.csrf_token) {
+    sessionStorage.setItem('bodam_access_token', data.access_token);
+    sessionStorage.setItem('bodam_csrf_token', data.csrf_token);
+  }
+}
+
 export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const url = `${apiBaseUrl}${path.startsWith('/') ? path : `/${path}`}`;
   const headers = new Headers(options.headers);
@@ -31,11 +62,45 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
     headers.set('Content-Type', 'application/json');
   }
 
-  const response = await fetch(url, {
+  let response = await fetch(url, {
     ...options,
     headers,
     credentials: 'include',
   });
+
+  // 401 Unauthorized - 토큰 만료 가능성
+  if (response.status === 401 && !path.includes('/auth/')) {
+    // 이미 refresh 중이면 기다림
+    if (isRefreshing && refreshPromise) {
+      await refreshPromise;
+    } else {
+      isRefreshing = true;
+      refreshPromise = refreshAccessToken();
+
+      try {
+        await refreshPromise;
+      } catch (error) {
+        isRefreshing = false;
+        refreshPromise = null;
+        throw error;
+      }
+
+      isRefreshing = false;
+      refreshPromise = null;
+    }
+
+    // 토큰 갱신 후 재시도
+    const newCsrf = readCsrfToken();
+    if (newCsrf && shouldSendCsrf(options.method)) {
+      headers.set('X-CSRF-Token', newCsrf);
+    }
+
+    response = await fetch(url, {
+      ...options,
+      headers,
+      credentials: 'include',
+    });
+  }
 
   let data: unknown = null;
   const text = await response.text();

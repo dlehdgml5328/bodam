@@ -164,11 +164,13 @@ export default function Header() {
     const checkLoginStatus = () => {
       const loginStatus = localStorage.getItem('isLoggedIn') === 'true';
       setIsLoggedIn(loginStatus);
+      // loggedInName 또는 userNickname 중 먼저 찾은 것 사용 (OAuth 로그인 시 loggedInName 사용)
+      const name = localStorage.getItem('loggedInName') || localStorage.getItem('userNickname') || '소방이';
+      setUserNickname(name);
     };
 
     const handleStorageChange = () => {
       checkLoginStatus();
-      setUserNickname(localStorage.getItem('userNickname') || '소방이');
       setUserProfileImage(localStorage.getItem('userProfileImage') || '');
     };
 
@@ -191,7 +193,7 @@ export default function Header() {
 
     const interval = setInterval(() => {
       checkLoginStatus();
-      const nickname = localStorage.getItem('userNickname') || '소방이';
+      const nickname = localStorage.getItem('loggedInName') || localStorage.getItem('userNickname') || '소방이';
       const profileImage = localStorage.getItem('userProfileImage') || '';
       if (nickname !== userNickname) setUserNickname(nickname);
       if (profileImage !== userProfileImage) setUserProfileImage(profileImage);
@@ -226,6 +228,9 @@ export default function Header() {
     localStorage.removeItem('isLoggedIn');
     localStorage.removeItem('userType');
     localStorage.removeItem('userNickname');
+    localStorage.removeItem('loggedInName');  // OAuth 로그인 시 사용된 이름도 제거
+    localStorage.removeItem('loggedInEmail');
+    localStorage.removeItem('loggedInProvider');
     localStorage.removeItem('groupNumber');
     sessionStorage.removeItem('bodam_access_token');
     sessionStorage.removeItem('bodam_csrf_token');
@@ -668,23 +673,25 @@ export default function Header() {
   const [showRefundModal, setShowRefundModal] = useState(false);
 
   // 소셜 로그인 처리
-  const handleSocialLogin = (provider: string) => {
-    console.log(`${provider} 로그인 시도`);
-    setIsLoggedIn(true);
-    localStorage.setItem('isLoggedIn', 'true');
-    localStorage.setItem('userType', 'individual');
-    localStorage.setItem('userNickname', '홍길동');
-    localStorage.removeItem('groupNumber');
-    setIsLoginModalOpen(false);
+  const handleSocialLogin = async (provider: string) => {
+    try {
+      // 1. Get authorization URL from backend
+      const response = await apiRequest<{ authorization_url: string; state: string }>(
+        `/auth/social/${provider}`,
+        { method: 'GET' }
+      );
 
-    if (loginPurpose === 'donation_history') {
-      setTimeout(() => {
-        handleMemberInquiry();
-      }, 300);
-    } else if (loginPurpose === 'donation') {
-      setTimeout(() => {
-        router.push('/donations');
-      }, 300);
+      // 2. Save state to sessionStorage for CSRF verification
+      sessionStorage.setItem(`oauth_state_${provider}`, response.state);
+
+      // 3. Redirect to OAuth provider
+      window.location.href = response.authorization_url;
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setLoginError(error.message);
+      } else {
+        setLoginError('소셜 로그인 중 문제가 발생했습니다.');
+      }
     }
   };
 

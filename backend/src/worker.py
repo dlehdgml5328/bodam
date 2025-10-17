@@ -25,6 +25,11 @@ celery_app.conf.beat_schedule = {
         'task': 'src.workers.crawler.crawl_mock_site',
         'schedule': 1800.0,  # 30분 = 1800초
     },
+    # 정기결제 자동 결제 (매일 오전 2시)
+    'process-recurring-donations-daily': {
+        'task': 'billing.process_subscriptions',
+        'schedule': crontab(hour=2, minute=0),  # 매일 02:00 KST
+    },
 }
 
 celery_app.conf.timezone = 'Asia/Seoul'
@@ -35,7 +40,7 @@ celery_app.autodiscover_tasks([
 ])
 
 # 명시적으로 워커 모듈 import
-from src.workers import crawler, incident_pipeline, matcher
+from src.workers import crawler, incident_pipeline, matcher, billing_processor
 
 
 @celery_app.task(name="worker.health_check")

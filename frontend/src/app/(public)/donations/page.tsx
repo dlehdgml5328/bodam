@@ -597,9 +597,47 @@ export default function DonationsPage() {
 
       console.log('기부 데이터:', donationData);
 
-      const tossPayments = await loadTossPayments('test_ck_D5GePWvyJnrK0W0k6q8gLzN97Eoq');
+      // 백엔드 API 호출하여 기부 생성 및 결제 URL 받기
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const response = await fetch(`${apiBaseUrl}/donations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(isLoggedIn ? {
+            'Authorization': `Bearer ${sessionStorage.getItem('bodam_access_token')}`
+          } : {})
+        },
+        body: JSON.stringify({
+          mode: donationMode,
+          amount: donationData.amount,
+          currency: 'KRW',
+          fire_station_id: donationMode === 'single' ? selectedFireStation : null,
+          donor: {
+            display_name: donationData.donorName,
+            email: donationData.donorEmail,
+            phone: donationData.donorPhone,
+            is_anonymous: isAnonymous,
+            needs_receipt: needReceipt,
+          },
+          regular: isRegularDonation ? {
+            enabled: true,
+            cycle: regularCycle,
+            start_date: startDate,
+          } : null,
+          message: message,
+        })
+      });
 
-      const orderId = (isRegularDonation ? 'regular_' : 'donation_') + Date.now();
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || '기부 생성 실패');
+      }
+
+      const checkoutData = await response.json();
+      const orderId = checkoutData.order_id;
+
+      const tossClientKey = process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY || 'test_ck_oEjb0gm23PYMm6epMNvoVpGwBJn5';
+      const tossPayments = await loadTossPayments(tossClientKey);
       let orderName = '';
       
       if (donationMode === 'single') {
@@ -609,9 +647,11 @@ export default function DonationsPage() {
       }
 
       if (isRegularDonation) {
+        // 정기결제는 빌링키 발급
+        const customerKey = `customer_${checkoutData.donation_id}`;
         await tossPayments.requestBillingAuth('카드', {
-          customerKey: 'customer_' + Date.now(),
-          successUrl: `${window.location.origin}/payment/success?type=regular&orderId=${orderId}&amount=${donationData.amount}&mode=${donationMode}&cycle=${regularCycle}&startDate=${startDate}`,
+          customerKey: customerKey,
+          successUrl: `${window.location.origin}/payment/billing-success?type=regular&orderId=${orderId}&amount=${donationData.amount}&customerKey=${customerKey}`,
           failUrl: `${window.location.origin}/payment/fail`,
         });
       } else {

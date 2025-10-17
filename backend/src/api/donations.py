@@ -26,7 +26,7 @@ from src.models.donation import (
     SubscriptionStatus,
 )
 from src.models.user import User
-from src.security.session import get_current_user_from_bearer, get_current_user_with_csrf
+from src.security.session import get_current_user_from_bearer, get_current_user_with_csrf, get_optional_user_from_bearer
 from src.services.donation_service import (
     AllocationSpec,
     BillingAuthorization,
@@ -81,7 +81,7 @@ class DonationCheckoutRequest(BaseModel):
     multiple_type: str | None = Field(default=None, pattern="^(split|each|custom)$")
     amount: Decimal = Field(..., ge=Decimal("1000"))
     currency: str = "KRW"
-    fire_station_id: uuid.UUID | None = None
+    fire_station_id: uuid.UUID | str | None = None  # UUID 또는 소방서 이름 모두 허용
     allocations: list[DonationAllocationInput] | None = None
     donor: DonorInfoInput = DonorInfoInput()
     group: GroupDonationInput | None = None
@@ -186,19 +186,75 @@ class SubscriptionResponse(BaseModel):
     billing_key: str | None
 
 
+async def _resolve_fire_station_id(fire_station_id: uuid.UUID | str | None, session: AsyncSession) -> uuid.UUID | None:
+    """소방서 ID 또는 이름을 UUID로 변환"""
+    if fire_station_id is None:
+        return None
+
+    # 이미 UUID면 그대로 반환
+    if isinstance(fire_station_id, uuid.UUID):
+        return fire_station_id
+
+    # 문자열이면 UUID 파싱 시도
+    try:
+        return uuid.UUID(fire_station_id)
+    except ValueError:
+        pass
+
+    # UUID가 아니면 소방서 이름으로 간주하고 검색
+    from sqlalchemy import select
+    from src.models.fire_station import FireStation
+
+    result = await session.execute(
+        select(FireStation).where(FireStation.name == fire_station_id)
+    )
+    fire_station = result.scalar_one_or_none()
+
+    if fire_station is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Fire station not found: {fire_station_id}"
+        )
+
+    return fire_station.id
+
+
 @router.post("/donations", response_model=DonationCheckoutResponse, status_code=status.HTTP_201_CREATED)
 async def create_donation_checkout(
     payload: DonationCheckoutRequest,
-    current_user: User = Depends(get_current_user_from_bearer),
+    current_user: User | None = Depends(get_optional_user_from_bearer),
     session: AsyncSession = Depends(get_session),
 ) -> DonationCheckoutResponse:
+    # 소방서 ID 변환 (이름이면 UUID로 변환)
+    fire_station_uuid = await _resolve_fire_station_id(payload.fire_station_id, session)
+
     payload.validate_business_rules()
 
-    incoming_email = payload.donor.email
-    if incoming_email and incoming_email.lower() != current_user.email.lower():
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="EMAIL_MISMATCH")
-
-    donor_email = incoming_email or current_user.email
+    # 비회원 기부: 이메일 필수
+    if current_user is None:
+        if not payload.donor.email:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="EMAIL_REQUIRED_FOR_GUEST")
+        donor_email = payload.donor.email
+        # 비회원 기부를 위한 임시 게스트 사용자 생성 또는 이메일만 사용
+        user_service = UserService(session)
+        try:
+            user = await user_service.get_user_by_email(donor_email)
+        except UserNotFoundError:
+            # 게스트 기부용 임시 사용자 생성
+            user = User(
+                email=donor_email,
+                name=payload.donor.display_name or "Guest",
+                is_active=True,
+            )
+            session.add(user)
+            await session.flush()
+    else:
+        # 로그인된 사용자 기부
+        incoming_email = payload.donor.email
+        if incoming_email and incoming_email.lower() != current_user.email.lower():
+            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="EMAIL_MISMATCH")
+        donor_email = incoming_email or current_user.email
+        user = current_user
 
     donor_spec = DonorInfoSpec(
         display_name=payload.donor.display_name,
@@ -208,8 +264,6 @@ async def create_donation_checkout(
         needs_receipt=payload.donor.needs_receipt,
         id_number=payload.donor.id_number,
     )
-
-    user = current_user
 
     allocations = (
         [
@@ -254,7 +308,7 @@ async def create_donation_checkout(
             mode=payload.mode,
             amount=payload.amount,
             currency=payload.currency,
-            fire_station_id=payload.fire_station_id,
+            fire_station_id=fire_station_uuid,
             allocations=allocations,
             donor=donor_spec,
             group=group_spec,
@@ -329,17 +383,57 @@ async def get_receipt(donation_id: uuid.UUID) -> Response:
     return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
 
 
+class RefundRequest(BaseModel):
+    reason: str = Field(..., min_length=1, max_length=500)
+
+
 @router.post("/donations/{donation_id}/refund", status_code=status.HTTP_201_CREATED)
 async def request_refund(
     donation_id: uuid.UUID,
-    payload: dict,
-    _current_user: User = Depends(get_current_user_with_csrf),
+    payload: RefundRequest,
+    current_user: User = Depends(get_current_user_with_csrf),
+    session: AsyncSession = Depends(get_session),
 ) -> dict:
-    return {
-        "refund_id": str(uuid.uuid4()),
-        "status": "pending_review",
-        "message": "환불 요청이 접수되었습니다",
-    }
+    """기부 환불 요청"""
+    async with _payments_gateway() as gateway:
+        service = DonationService(session, gateway)
+        try:
+            # 기부 조회
+            donation = await service.get_donation(donation_id)
+
+            # 권한 확인 (본인의 기부인지)
+            if donation.user_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="본인의 기부만 환불 요청할 수 있습니다."
+                )
+
+            # 환불 처리
+            refunded_donation = await service.request_refund(
+                donation_id=donation_id,
+                reason=payload.reason,
+            )
+
+            await session.commit()
+
+            return {
+                "donation_id": str(refunded_donation.id),
+                "status": "refunded",
+                "message": "환불이 완료되었습니다",
+                "refunded_at": refunded_donation.refunded_at.isoformat() if refunded_donation.refunded_at else None,
+            }
+
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc)
+            ) from exc
+        except Exception as exc:
+            logger.exception("환불 처리 중 오류 발생")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="환불 처리 중 오류가 발생했습니다."
+            ) from exc
 
 
 @router.get("/subscriptions")

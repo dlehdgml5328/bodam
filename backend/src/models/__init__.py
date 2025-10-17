@@ -12,14 +12,17 @@ from .donation import (
 from .fire_station import FireStation, FireStationActiveIncident, FireStationStatus
 from .group import Group, GroupMembership
 from .news_content import NewsContent
+from .crawled_content import CrawledContent
 from .notification import Notification
 from .password_reset import PasswordResetToken
 from .ranking import Ranking
 from .receipt import Receipt
+from .refresh_token import RefreshToken
 from .user import User
 from .fire_incident import FireIncident
 from .dispatch_event import DispatchEvent
 from .news_match import NewsMatch
+from .selenium_crawl_job import SeleniumCrawlJob
 
 __all__ = [
     "Base",
@@ -36,11 +39,14 @@ __all__ = [
     "Group",
     "GroupMembership",
     "NewsContent",
+    "CrawledContent",
     "Notification",
     "PasswordResetToken",
     "Ranking",
     "Receipt",
+    "RefreshToken",
     "FireIncident",
     "DispatchEvent",
     "NewsMatch",
+    "SeleniumCrawlJob",
 ]

@@ -117,7 +117,8 @@ services:
       # Security
       - JWT_SECRET=dev-jwt-secret-key-for-bodam-project-must-be-long-enough-for-hmac-algorithm
       - JWT_ALGORITHM=HS256
-      - ACCESS_TOKEN_TTL=1440
+      - ACCESS_TOKEN_TTL=15
+      - REFRESH_TOKEN_TTL=10080
       - PASSWORD_RESET_TOKEN_TTL=30
 
       # Cookies & CORS
@@ -139,7 +140,7 @@ services:
 
       # Feature Flags
       - DEBUG=true
-      - ENABLE_RATE_LIMITING=false
+      - ENABLE_RATE_LIMITING=true
       - ENABLE_MONITORING=true
 
     ports:

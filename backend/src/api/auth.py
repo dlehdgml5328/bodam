@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
+import secrets
 import uuid
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, EmailStr, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config.security import get_security_settings
 from src.database.connection import get_session
-from src.models.user import User
+from src.models.user import User, UserRole
 from src.security.passwords import hash_password, verify_password
 from src.security.session import (
     clear_session_cookies,
@@ -24,11 +26,18 @@ from src.services.password_reset_service import (
     PasswordResetTokenExpiredError,
     PasswordResetTokenNotFoundError,
 )
+from src.services.refresh_token_service import (
+    RefreshTokenService,
+    RefreshTokenExpiredError,
+    RefreshTokenRevokedError,
+    RefreshTokenNotFoundError,
+)
 from src.services.user_service import (
     UserAlreadyExistsError,
     UserNotFoundError,
     UserService,
 )
+from src.services.oauth_service import OAuthService, OAuthError, SocialProvider
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -111,7 +120,7 @@ async def login(
     if not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="INVALID_CREDENTIALS")
 
-    tokens = issue_session_tokens(response, user)
+    tokens = await issue_session_tokens(response, user, session)
 
     return LoginResponse(
         user=LoginResponse.UserInfo(id=user.id, email=user.email, name=user.name),
@@ -128,11 +137,54 @@ async def logout(response: Response) -> JSONResponse:
 
 @router.post("/refresh")
 async def refresh(
+    request: Request,
     response: Response,
-    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
 ) -> dict[str, str]:
-    tokens = issue_session_tokens(response, current_user)
-    return tokens
+    """Refresh access token using refresh token cookie."""
+    refresh_token_string = request.cookies.get("bodam_refresh")
+
+    if not refresh_token_string:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="REFRESH_TOKEN_MISSING"
+        )
+
+    refresh_service = RefreshTokenService(session)
+    user_service = UserService(session)
+
+    try:
+        # Validate refresh token
+        refresh_token = await refresh_service.validate_token(refresh_token_string)
+
+        # Get user
+        user = await user_service.get_user(refresh_token.user_id)
+
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="ACCOUNT_DISABLED"
+            )
+
+        # Issue new tokens
+        tokens = await issue_session_tokens(response, user, session)
+        return tokens
+
+    except RefreshTokenNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="INVALID_REFRESH_TOKEN"
+        )
+    except RefreshTokenExpiredError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="REFRESH_TOKEN_EXPIRED"
+        )
+    except RefreshTokenRevokedError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="REFRESH_TOKEN_REVOKED"
+        )
 
 
 @router.post("/password-reset/request")
@@ -179,22 +231,102 @@ async def confirm_password_reset(
 
 
 @router.get("/social/{provider}")
-async def social_login(provider: Literal["google", "kakao", "naver"]) -> RedirectResponse:
-    return RedirectResponse(
-        url=f"https://auth.bodam.example/{provider}", status_code=status.HTTP_302_FOUND
-    )
+async def social_login(provider: SocialProvider) -> dict[str, str]:
+    """Generate OAuth authorization URL for social login."""
+    oauth_service = OAuthService()
+    state = secrets.token_urlsafe(32)
+
+    try:
+        auth_url = oauth_service.get_authorization_url(provider, state)
+        return {
+            "authorization_url": auth_url,
+            "state": state,
+        }
+    except OAuthError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc)
+        )
 
 
-@router.get("/social/{provider}/callback")
+@router.post("/social/{provider}/callback")
 async def social_callback(
-    provider: Literal["google", "kakao", "naver"], code: str | None = None
-) -> RedirectResponse:
-    if code is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing code")
-    return RedirectResponse(
-        url=f"https://app.bodam.example/social/{provider}?code={code}",
-        status_code=status.HTTP_302_FOUND,
-    )
+    provider: SocialProvider,
+    code: str,
+    state: str,
+    response: Response,
+    session: AsyncSession = Depends(get_session),
+) -> LoginResponse:
+    """Handle OAuth callback and create/login user."""
+    oauth_service = OAuthService()
+    user_service = UserService(session)
+
+    try:
+        # 1. Exchange code for access token
+        access_token = await oauth_service.get_access_token(provider, code, state)
+
+        # 2. Get user info from provider
+        user_info = await oauth_service.get_user_info(provider, access_token)
+
+        social_id = user_info.get("social_id")
+        email = user_info.get("email")
+        name = user_info.get("name")
+
+        if not social_id or not email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="소셜 로그인에서 필수 정보를 받지 못했습니다."
+            )
+
+        # 3. Check if user exists with this social account
+        user = await session.scalar(
+            select(User).where(
+                User.social_provider == provider,
+                User.social_id == social_id
+            )
+        )
+
+        # 4. If not exists, check if email exists
+        if not user:
+            try:
+                user = await user_service.get_user_by_email(email)
+                # Email exists but not linked to this social account
+                # Link the social account
+                user.social_provider = provider
+                user.social_id = social_id
+                await session.flush()
+            except UserNotFoundError:
+                # Create new user
+                user = await user_service.create_user(
+                    email=email,
+                    password_hash=secrets.token_urlsafe(32),  # Random password
+                    name=name or email.split("@")[0],
+                    role=UserRole.DONOR,
+                )
+                user.social_provider = provider
+                user.social_id = social_id
+                await session.flush()
+
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="ACCOUNT_DISABLED"
+            )
+
+        # 5. Issue tokens
+        tokens = await issue_session_tokens(response, user, session)
+
+        return LoginResponse(
+            user=LoginResponse.UserInfo(id=user.id, email=user.email, name=user.name),
+            access_token=tokens["access_token"],
+            csrf_token=tokens["csrf_token"],
+        )
+
+    except OAuthError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"OAuth 인증 실패: {str(exc)}"
+        )
 
 
 __all__ = ["router"]
