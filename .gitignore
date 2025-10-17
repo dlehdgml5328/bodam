@@ -72,3 +72,6 @@ dist/
 # TypeScript/JavaScript
 *.tsbuildinfo
 .eslintcache
+
+# Sensitive setup files
+SETUP_COMPLETE.md
