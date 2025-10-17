@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/incidents", tags=["incidents"])
 
 @router.get("/", response_model=List[dict])
 async def get_incidents(
-    limit: int = Query(default=20, le=100),
+    limit: int = Query(default=20, le=500),
     offset: int = Query(default=0, ge=0),
     status: Optional[str] = Query(default=None),
     severity: Optional[str] = Query(default=None),
@@ -25,7 +25,7 @@ async def get_incidents(
     화재 사고 목록 조회
 
     Args:
-        limit: 페이지 크기 (최대 100)
+        limit: 페이지 크기 (최대 500)
         offset: 오프셋
         status: 상태 필터 (dispatching, suppressing, contained, resolved)
         severity: 심각도 필터 (critical, high, medium, low)

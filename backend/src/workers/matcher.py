@@ -129,7 +129,7 @@ async def _run_matcher(incident: Dict):
         raise
 
 
-@shared_task
+@shared_task(queue='news_matching')
 def match_news_and_videos(incident: Dict):
     """
     화재 출동 데이터에 뉴스/영상 매칭 (LangGraph)
