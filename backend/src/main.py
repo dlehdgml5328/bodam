@@ -61,7 +61,7 @@ from .api.admin import (
     search as admin_search,
 )
 from .api.webhooks import toss
-from .config.security import get_security_settings
+from .security_config import get_security_settings
 from .database.connection import engine
 from .middleware.auth import AuthMiddleware
 
