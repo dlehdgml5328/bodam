@@ -2,9 +2,10 @@
 LoadTestRun model - K6 부하 테스트 결과 저장
 FR-017, FR-019: 부하 테스트 이력 및 성능 분석
 """
-from sqlalchemy import Column, Integer, String, DateTime, Float, Boolean, Text
+
+from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
-from datetime import datetime
+
 from src.models.base import Base
 
 

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import uuid
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone
-import os
 from decimal import Decimal
 from typing import Any
 
@@ -14,14 +14,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.connection import get_session
+from src.integrations.toss_payments import TossPaymentsClient
 from src.models.donation import (
     AllocationType,
     Donation,
-    DonationAllocation,
     DonationMode,
     DonationStatus,
     DonationSubscription,
-    DonationType,
     SubscriptionCycle,
     SubscriptionStatus,
 )
@@ -30,6 +29,7 @@ from src.security.session import get_current_user_from_bearer, get_current_user_
 from src.services.donation_service import (
     AllocationSpec,
     BillingAuthorization,
+    CheckoutSession,
     DonationService,
     DonorInfoSpec,
     GroupInfoSpec,
@@ -38,7 +38,6 @@ from src.services.donation_service import (
     RegularDonationSpec,
 )
 from src.services.user_service import UserNotFoundError, UserService
-from src.integrations.toss_payments import TossPaymentsClient
 
 router = APIRouter(tags=["donations"])
 

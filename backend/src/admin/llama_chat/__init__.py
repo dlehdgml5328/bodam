@@ -1,7 +1,7 @@
 """
-Llama AI D ¨È
+Llama AI ì±„íŒ… í†µí•©
 
-Knowledge Graph 0 ğ´ ü¬ D¤
+Knowledge Graph ê¸°ë°˜ ìì—°ì–´ ì¿¼ë¦¬
 """
 
 from .page import LlamaChatPage

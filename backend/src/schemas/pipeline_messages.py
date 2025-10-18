@@ -2,7 +2,8 @@
 파이프라인 메시지 스키마 (크롤러 → 큐 → 워커)
 """
 from datetime import datetime
-from typing import Optional, Literal
+from typing import Literal, Optional
+
 from pydantic import BaseModel, Field
 
 

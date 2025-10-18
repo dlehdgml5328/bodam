@@ -4,21 +4,20 @@
 크롤링된 화재 출동 데이터를 기반으로
 네이버 뉴스와 YouTube 영상을 검색하여 Llama 3.3으로 관련성 평가
 """
-from celery import shared_task
 from typing import Dict
-from datetime import datetime
-import json
-from langgraph.graph import StateGraph, END
+
+from celery import shared_task
+from langgraph.graph import END, StateGraph
+
+from src.monitoring.logging import get_logger
 from src.workers.langgraph_nodes import (
     MatcherState,
+    evaluate_relevance_node,
     extract_keywords_node,
+    save_matches_node,
     search_news_node,
     search_videos_node,
-    evaluate_relevance_node,
-    save_matches_node
 )
-from src.cache.clients import get_cache_client
-from src.monitoring.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -61,12 +60,13 @@ async def _run_matcher(incident: Dict):
     Args:
         incident: 화재 출동 데이터
     """
-    incident_id = incident.get('id')
+    incident_id = incident.get("id")
     logger.info(f"[Matcher] Starting LangGraph match for incident: {incident_id}")
 
     # 이미 매칭된 사고인지 확인 (API 호출 절감)
     try:
         from sqlalchemy import select
+
         from src.database.connection import get_session
         from src.models.news_match import NewsMatch
 
@@ -120,8 +120,8 @@ async def _run_matcher(incident: Dict):
         # DB에 저장되었으므로 Redis는 스킵 (API가 DB를 먼저 확인함)
         return {
             "incident_id": incident_id,
-            "news_count": len(final_state['evaluated_news']),
-            "video_count": len(final_state['evaluated_videos'])
+            "news_count": len(final_state["evaluated_news"]),
+            "video_count": len(final_state["evaluated_videos"])
         }
 
     except Exception as e:

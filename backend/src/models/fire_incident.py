@@ -2,17 +2,19 @@
 화재 사고 정보 모델
 """
 from datetime import datetime
+
 from sqlalchemy import (
-    Column,
-    String,
-    Integer,
     BigInteger,
-    Float,
-    Text,
+    Column,
     DateTime,
+    Float,
     Index,
+    Integer,
+    String,
+    Text,
 )
 from sqlalchemy.orm import relationship
+
 from .base import Base
 
 

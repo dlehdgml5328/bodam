@@ -2,10 +2,12 @@
 ErrorEvent model - pgvector embedding 포함
 FR-015, FR-016: 중요 에러 저장 및 유사도 검색
 """
-from sqlalchemy import Column, Integer, String, DateTime, Text, Index
-from sqlalchemy.dialects.postgresql import JSONB
-from pgvector.sqlalchemy import Vector
 from datetime import datetime
+
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import Column, DateTime, Index, Integer, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
+
 from src.models.base import Base
 
 
@@ -31,6 +33,6 @@ class ErrorEvent(Base):
     resolution_notes = Column(Text, nullable=True)
 
     __table_args__ = (
-        Index('ix_error_events_timestamp_level', 'timestamp', 'level'),
-        Index('ix_error_events_service_timestamp', 'service', 'timestamp'),
+        Index("ix_error_events_timestamp_level", "timestamp", "level"),
+        Index("ix_error_events_service_timestamp", "service", "timestamp"),
     )

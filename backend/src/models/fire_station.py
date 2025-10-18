@@ -10,7 +10,6 @@ from decimal import Decimal
 from geoalchemy2 import Geometry
 from sqlalchemy import (
     DateTime,
-    Enum as SAEnum,
     ForeignKey,
     Integer,
     Numeric,
@@ -18,10 +17,17 @@ from sqlalchemy import (
     Text,
     func,
 )
+from sqlalchemy import (
+    Enum as SAEnum,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
+
+# Forward reference to avoid circular import
+if False:  # TYPE_CHECKING
+    from .news_content import NewsContent
 
 
 class StationStatus(str, enum.Enum):

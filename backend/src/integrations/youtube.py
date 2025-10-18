@@ -3,9 +3,11 @@ YouTube Data API v3 클라이언트
 
 화재 출동 데이터에 매칭되는 영상 검색
 """
+from typing import Dict, List
+
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from typing import List, Dict
+
 from src.monitoring.logging import get_logger
 
 logger = get_logger(__name__)
@@ -20,7 +22,7 @@ class YouTubeClient:
             api_key: Google API 키
         """
         self.api_key = api_key
-        self.youtube = build('youtube', 'v3', developerKey=api_key)
+        self.youtube = build("youtube", "v3", developerKey=api_key)
 
     def search(
         self,

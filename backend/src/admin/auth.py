@@ -6,8 +6,6 @@ Admin 역할(UserRole.ADMIN)을 가진 사용자만 접근 가능합니다.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from sqladmin.authentication import AuthenticationBackend
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
@@ -17,7 +15,6 @@ from src.models.user import UserRole
 from src.security.passwords import verify_password
 from src.security.session import (
     SESSION_COOKIE_NAME,
-    clear_session_cookies,
     issue_session_tokens,
 )
 from src.security.tokens import TokenDecodeError, decode_access_token

@@ -2,11 +2,13 @@
 ErrorAnalyzer - pgvector 유사도 검색
 FR-015, FR-016: 유사 에러 검색
 """
+from typing import List
+
+import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.models.error_event import ErrorEvent
-from typing import List
-import httpx
 
 
 class ErrorAnalyzer:

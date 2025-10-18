@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import atexit
 import logging
-from queue import Queue, Empty
+from queue import Empty, Queue
 from typing import Optional
 
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
 logger = logging.getLogger(__name__)
@@ -101,9 +101,9 @@ class WebDriverPool:
             driver = self.pool.get(timeout=timeout)
             logger.debug(f"Acquired driver from pool: {driver.session_id}")
             return driver
-        except Empty:
+        except Empty as e:
             logger.error(f"No WebDriver available within {timeout}s (pool exhausted)")
-            raise RuntimeError(f"WebDriver pool exhausted (max_size={self.max_size})")
+            raise RuntimeError(f"WebDriver pool exhausted (max_size={self.max_size})") from e
 
     def release(self, driver: webdriver.Chrome):
         """
@@ -133,7 +133,7 @@ class WebDriverPool:
             # Don't return broken driver to pool
             try:
                 driver.quit()
-            except:
+            except Exception:
                 pass
 
     def cleanup(self):

@@ -2,15 +2,17 @@
 Metrics middleware - HTTP metrics 자동 수집
 FR-001, FR-004: Status grouping (2xx, 4xx, 5xx)
 """
+import time
+
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-import time
+
 from src.api.observability import (
-    http_requests_total,
     http_request_duration_seconds,
     http_request_size_bytes,
-    http_response_size_bytes,
     http_requests_in_progress,
+    http_requests_total,
+    http_response_size_bytes,
 )
 
 

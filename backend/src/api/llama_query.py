@@ -2,11 +2,13 @@
 Llama observability query API
 FR-013, FR-014, NFR-001: 1초 이내 응답
 """
+import time
+from typing import List, Optional
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional, List
+
 from src.services.observability_agent import ObservabilityAgent
-import time
 
 router = APIRouter(prefix="/api/v1/observability", tags=["observability"])
 
@@ -64,4 +66,4 @@ async def get_trace(trace_id: str):
         trace = await agent.query_tempo(trace_id)
         return trace
     except Exception as e:
-        raise HTTPException(status_code=404, detail="Trace not found")
+        raise HTTPException(status_code=404, detail="Trace not found") from e

@@ -12,16 +12,16 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from src.database import get_db
-from src.models.selenium_crawl_job import SeleniumCrawlJob, JobStatus
-from src.models.crawled_content import CrawledContent
 from src.api.crawler.schemas import (
-    CreateCrawlJobRequest,
-    CrawlJobResponse,
+    CrawledContentResponse,
     CrawlJobDetailResponse,
     CrawlJobListResponse,
-    CrawledContentResponse,
+    CrawlJobResponse,
+    CreateCrawlJobRequest,
 )
+from src.database import get_db
+from src.models.crawled_content import CrawledContent
+from src.models.selenium_crawl_job import JobStatus, SeleniumCrawlJob
 from src.workers.selenium_crawler_worker import crawl_url
 
 logger = logging.getLogger(__name__)
@@ -80,8 +80,8 @@ async def list_crawl_jobs(
         try:
             job_status = JobStatus(status)
             query = query.filter(SeleniumCrawlJob.status == job_status)
-        except ValueError:
-            raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid status: {status}") from e
 
     # Get total count
     total = query.count()

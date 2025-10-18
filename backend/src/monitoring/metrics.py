@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from prometheus_client import Counter, Histogram, REGISTRY, generate_latest
+from prometheus_client import REGISTRY, Counter, Histogram, generate_latest
 
 REQUEST_COUNT = Counter("bodam_requests_total", "Total HTTP requests", ["method", "path", "status"])
 REQUEST_LATENCY = Histogram("bodam_request_duration_seconds", "Request latency", ["path"])

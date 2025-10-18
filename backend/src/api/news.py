@@ -32,9 +32,9 @@ class VideoNewsResponse(BaseModel):
     class Config:
         populate_by_name = True
         # JSON 응답 시 카멜케이스로 변환
-        alias_generator = lambda field_name: ''.join(
+        alias_generator = lambda field_name: "".join(
             word.capitalize() if i > 0 else word
-            for i, word in enumerate(field_name.split('_'))
+            for i, word in enumerate(field_name.split("_"))
         )
         by_alias = True
 
@@ -47,9 +47,9 @@ class BreakingNewsResponse(BaseModel):
 
     class Config:
         populate_by_name = True
-        alias_generator = lambda field_name: ''.join(
+        alias_generator = lambda field_name: "".join(
             word.capitalize() if i > 0 else word
-            for i, word in enumerate(field_name.split('_'))
+            for i, word in enumerate(field_name.split("_"))
         )
         by_alias = True
 
@@ -139,7 +139,7 @@ def _choose_thumbnail(index: int) -> str:
 
 def _extract_video_url(raw_url: str) -> str | None:
     if "youtube.com/watch" in raw_url:
-        from urllib.parse import urlparse, parse_qs
+        from urllib.parse import parse_qs, urlparse
 
         parsed = urlparse(raw_url)
         video_id = parse_qs(parsed.query).get("v", [None])[0]
@@ -253,10 +253,11 @@ def _map_breaking_record(record: BreakingNewsRecord) -> BreakingNewsResponse:
 async def _get_video_payload(limit: int) -> list[VideoNewsResponse]:
     # DB에서 영상만 가져오기 (실시간 주요 뉴스 섹션)
     try:
-        from sqlalchemy import select, desc
+        from sqlalchemy import desc, select
+
         from src.database.connection import get_session
-        from src.models.news_match import NewsMatch
         from src.models.fire_incident import FireIncident
+        from src.models.news_match import NewsMatch
 
         async for session in get_session():
             query = (
@@ -306,7 +307,7 @@ async def _get_video_payload(limit: int) -> list[VideoNewsResponse]:
                 return video_list
             else:
                 # DB에 영상이 없으면 빈 배열 반환 (Mock 데이터 사용 안 함)
-                logger.info(f"[NewsAPI] No videos in DB, returning empty list")
+                logger.info("[NewsAPI] No videos in DB, returning empty list")
                 return []
             break
     except Exception as e:
@@ -319,10 +320,11 @@ async def _get_video_payload(limit: int) -> list[VideoNewsResponse]:
 async def _get_breaking_payload(limit: int) -> list[BreakingNewsResponse]:
     # 먼저 DB에서 실제 매칭된 뉴스 데이터 가져오기
     try:
-        from sqlalchemy import select, desc
+        from sqlalchemy import desc, select
+
         from src.database.connection import get_session
-        from src.models.news_match import NewsMatch
         from src.models.fire_incident import FireIncident
+        from src.models.news_match import NewsMatch
 
         async for session in get_session():
             query = (

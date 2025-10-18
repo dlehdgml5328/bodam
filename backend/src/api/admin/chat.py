@@ -11,7 +11,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
-from src.admin.llama_chat.service import ChatResponse, LlamaChatService
+from src.admin.llama_chat.service import LlamaChatService
 from src.monitoring.logging import get_logger
 
 logger = get_logger(__name__)
@@ -127,13 +127,13 @@ async def query_chat(request: ChatQueryRequest) -> ChatQueryResponse:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
-        )
+        ) from e
     except Exception as e:
         logger.error(f"[ChatAPI] Query failed: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="쿼리 처리 중 오류가 발생했습니다."
-        )
+        ) from e
 
 
 @router.get("/history/{session_id}", response_model=ChatHistoryResponse)
@@ -180,7 +180,7 @@ async def get_history(session_id: str) -> ChatHistoryResponse:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="대화 기록 조회 중 오류가 발생했습니다."
-        )
+        ) from e
 
 
 @router.post("/clear/{session_id}", response_model=SuccessResponse)
@@ -214,7 +214,7 @@ async def clear_history(session_id: str) -> SuccessResponse:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="대화 기록 초기화 중 오류가 발생했습니다."
-        )
+        ) from e
 
 
 @router.post("/session", response_model=SessionCreateResponse)
@@ -244,7 +244,7 @@ async def create_session() -> SessionCreateResponse:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="세션 생성 중 오류가 발생했습니다."
-        )
+        ) from e
 
 
 @router.delete("/session/{session_id}", response_model=SuccessResponse)
@@ -278,7 +278,7 @@ async def delete_session(session_id: str) -> SuccessResponse:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="세션 삭제 중 오류가 발생했습니다."
-        )
+        ) from e
 
 
 __all__ = ["router"]

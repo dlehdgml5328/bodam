@@ -9,7 +9,6 @@ from starlette.requests import Request
 from starlette.responses import RedirectResponse
 
 from src.integrations.toss_payments import TossPaymentsClient
-from src.models.donation import Donation, DonationStatus
 from src.models.refund import Refund, RefundStatus
 from src.services.refund_service import RefundService
 

@@ -5,9 +5,10 @@
 1. fire_incidents 테이블에 저장
 2. matcher 워커를 호출하여 뉴스 매칭 시작
 """
-from celery import shared_task
 from datetime import datetime
-from typing import Dict, Any
+from typing import Any, Dict
+
+from celery import shared_task
 from sqlalchemy import select
 
 from src.database.connection import session_scope
@@ -46,39 +47,39 @@ def save_and_match_incident(self, incident_data: Dict[str, Any]):
     try:
         async def _save():
             async with session_scope() as session:
-                incident_id = incident_data.get('id')
+                incident_id = incident_data.get("id")
 
                 # 발생 시간 합성
-                occurrence_date = incident_data.get('occurrenceDate', '')
-                occurrence_time = incident_data.get('occurrenceTime', '00:00')
+                occurrence_date = incident_data.get("occurrenceDate", "")
+                occurrence_time = incident_data.get("occurrenceTime", "00:00")
                 occurred_at_str = f"{occurrence_date} {occurrence_time}:00"
 
                 try:
-                    occurred_at = datetime.fromisoformat(occurred_at_str.replace(' ', 'T'))
+                    occurred_at = datetime.fromisoformat(occurred_at_str.replace(" ", "T"))
                 except ValueError:
                     occurred_at = datetime.utcnow()
 
                 # 상태 매핑
                 status_map = {
-                    'A': 'dispatching',  # 출동중
-                    'B': 'suppressing',  # 진압중
-                    'C': 'contained',    # 진압완료
-                    'D': 'resolved'      # 귀소
+                    "A": "dispatching",  # 출동중
+                    "B": "suppressing",  # 진압중
+                    "C": "contained",    # 진압완료
+                    "D": "resolved"      # 귀소
                 }
-                status = status_map.get(incident_data.get('status', 'D'), 'resolved')
+                status = status_map.get(incident_data.get("status", "D"), "resolved")
 
                 # 심각도 판단 (사상자 또는 피해액 기준)
-                casualties = incident_data.get('casualties', 0) + incident_data.get('injured', 0)
-                damage = incident_data.get('damageAmount', 0)
+                casualties = incident_data.get("casualties", 0) + incident_data.get("injured", 0)
+                damage = incident_data.get("damageAmount", 0)
 
                 if casualties >= 10 or damage >= 1000000000:  # 10억원 이상
-                    severity = 'critical'
+                    severity = "critical"
                 elif casualties >= 5 or damage >= 500000000:  # 5억원 이상
-                    severity = 'high'
+                    severity = "high"
                 elif casualties >= 1 or damage >= 100000000:  # 1억원 이상
-                    severity = 'medium'
+                    severity = "medium"
                 else:
-                    severity = 'low'
+                    severity = "low"
 
                 # 기존 사고 확인
                 stmt = select(FireIncident).where(FireIncident.id == incident_id)
@@ -88,9 +89,9 @@ def save_and_match_incident(self, incident_data: Dict[str, Any]):
                 if existing:
                     # 업데이트
                     existing.status = status
-                    existing.casualties_injured = incident_data.get('casualties', 0)
-                    existing.casualties_dead = incident_data.get('injured', 0)  # 주의: injured가 실제로는 dead일 수 있음
-                    existing.estimated_damage = incident_data.get('damageAmount')
+                    existing.casualties_injured = incident_data.get("casualties", 0)
+                    existing.casualties_dead = incident_data.get("injured", 0)  # 주의: injured가 실제로는 dead일 수 있음
+                    existing.estimated_damage = incident_data.get("damageAmount")
                     existing.severity = severity
                     existing.updated_at = datetime.utcnow()
 
@@ -99,16 +100,16 @@ def save_and_match_incident(self, incident_data: Dict[str, Any]):
                     # 신규 생성
                     incident = FireIncident(
                         id=incident_id,
-                        title=incident_data.get('fireName', ''),
-                        location_address=incident_data.get('address', ''),
-                        latitude=incident_data.get('axisY'),
-                        longitude=incident_data.get('axisX'),
+                        title=incident_data.get("fireName", ""),
+                        location_address=incident_data.get("address", ""),
+                        latitude=incident_data.get("axisY"),
+                        longitude=incident_data.get("axisX"),
                         occurred_at=occurred_at,
                         status=status,
                         severity=severity,
-                        casualties_injured=incident_data.get('casualties', 0),
-                        casualties_dead=incident_data.get('injured', 0),
-                        estimated_damage=incident_data.get('damageAmount'),
+                        casualties_injured=incident_data.get("casualties", 0),
+                        casualties_dead=incident_data.get("injured", 0),
+                        estimated_damage=incident_data.get("damageAmount"),
                         source_url=None,
                     )
 
@@ -141,4 +142,4 @@ def save_and_match_incident(self, incident_data: Dict[str, Any]):
 
     except Exception as e:
         logger.error(f"[Pipeline] Failed to save incident: {e}", exc_info=True)
-        raise self.retry(exc=e)
+        raise self.retry(exc=e) from None

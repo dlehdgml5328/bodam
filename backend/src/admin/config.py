@@ -4,7 +4,6 @@ SQLAdmin 설정 모듈
 SQLAdmin 인스턴스 생성 및 전역 설정을 관리합니다.
 """
 import os
-from typing import Optional
 
 from sqladmin import Admin
 from sqlalchemy.ext.asyncio import AsyncEngine

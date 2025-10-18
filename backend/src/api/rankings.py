@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import func, select, desc
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.connection import get_session
 from src.models.donation import Donation
-from src.models.user import User
 from src.models.group import Group
+from src.models.user import User
 
 router = APIRouter(prefix="/rankings", tags=["rankings"])
 

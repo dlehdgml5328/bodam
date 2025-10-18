@@ -92,7 +92,7 @@ class RefundService:
                 logger.error(
                     "Toss Payments refund failed for refund_id=%s: %s", refund_id, str(e)
                 )
-                raise ValueError(f"Toss Payments API error: {e}")
+                raise ValueError(f"Toss Payments API error: {e}") from e
 
         # Donation 상태 업데이트
         donation.status = DonationStatus.REFUNDED

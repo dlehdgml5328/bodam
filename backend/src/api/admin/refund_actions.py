@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.connection import get_db_session
 from src.integrations.toss_payments import TossPaymentsClient
-from src.models.refund import Refund, RefundStatus
+from src.models.refund import Refund
 from src.services.refund_service import BulkRefundResult, RefundService
 
 logger = logging.getLogger(__name__)
@@ -122,13 +122,13 @@ async def bulk_approve_refunds(
 
     except ValueError as e:
         logger.error("Bulk approve validation error: %s", str(e))
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     except Exception as e:
         logger.exception("Bulk approve unexpected error")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error during bulk approval",
-        )
+        ) from e
 
 
 @router.post("/bulk-reject", response_model=BulkRefundResponse, status_code=status.HTTP_200_OK)
@@ -160,13 +160,13 @@ async def bulk_reject_refunds(
 
     except ValueError as e:
         logger.error("Bulk reject validation error: %s", str(e))
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     except Exception as e:
         logger.exception("Bulk reject unexpected error")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error during bulk rejection",
-        )
+        ) from e
 
 
 @router.post("/{refund_id}/approve", status_code=status.HTTP_200_OK)
@@ -192,13 +192,13 @@ async def approve_refund(
 
     except ValueError as e:
         logger.error("Approve refund validation error: %s", str(e))
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     except Exception as e:
         logger.exception("Approve refund unexpected error")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error during approval",
-        )
+        ) from e
 
 
 @router.post("/{refund_id}/reject", status_code=status.HTTP_200_OK)
@@ -224,13 +224,13 @@ async def reject_refund(
 
     except ValueError as e:
         logger.error("Reject refund validation error: %s", str(e))
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     except Exception as e:
         logger.exception("Reject refund unexpected error")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error during rejection",
-        )
+        ) from e
 
 
 @router.get("/{refund_id}", response_model=RefundDetailResponse, status_code=status.HTTP_200_OK)

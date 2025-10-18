@@ -3,7 +3,7 @@ Observability API - Prometheus metrics endpoint
 FR-001, FR-004: 14 core metrics 노출
 """
 from fastapi import APIRouter
-from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 from starlette.responses import Response
 
 router = APIRouter()

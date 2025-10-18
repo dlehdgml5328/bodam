@@ -5,10 +5,10 @@
 
 from __future__ import annotations
 
-import os
 from contextlib import asynccontextmanager
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
 from src.config import settings as config_settings
 
 settings = config_settings

@@ -8,19 +8,19 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import (
-    TimeoutException,
     NoSuchElementException,
+    TimeoutException,
     WebDriverException,
 )
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
 
-from src.models.selenium_crawl_job import SeleniumCrawlJob, JobStatus
+from src.models.selenium_crawl_job import SeleniumCrawlJob
 from src.services.crawler.webdriver_pool import driver_pool
 
 logger = logging.getLogger(__name__)

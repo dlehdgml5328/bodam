@@ -9,10 +9,10 @@ from typing import Final
 from fastapi import Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.security_config import get_security_settings
 from src.database.connection import get_session
 from src.models.user import User
 from src.security.tokens import TokenDecodeError, create_access_token, decode_access_token
+from src.security_config import get_security_settings
 from src.services.user_service import UserNotFoundError, UserService
 
 SESSION_COOKIE_NAME: Final[str] = "bodam_session"

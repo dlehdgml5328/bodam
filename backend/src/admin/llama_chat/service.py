@@ -8,21 +8,16 @@ Together AI Llama 3.3을 사용하여 자연어로 데이터베이스를 쿼리�
 from __future__ import annotations
 
 import json
-import re
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-import httpx
 import numpy as np
 import redis.asyncio as redis
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.cache.clients import get_cache_client, get_semantic_client
-from src.database.connection import get_session
 from src.integrations.graph import GraphClient
 from src.integrations.together_ai import TogetherAIHttpClient
 from src.monitoring.logging import get_logger

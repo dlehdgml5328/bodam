@@ -6,8 +6,8 @@ Extracts structured data from rendered HTML.
 from __future__ import annotations
 
 import logging
-from typing import Dict, Any, Optional
 from datetime import datetime
+from typing import Any, Dict, Optional
 
 from bs4 import BeautifulSoup
 

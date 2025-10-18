@@ -2,9 +2,10 @@
 ObservabilityAgent - Llama → Prometheus/Loki/Tempo 쿼리
 FR-013, FR-014, NFR-001: 1초 이내 응답
 """
-import httpx
-from typing import Dict, Any
 from datetime import datetime
+from typing import Any, Dict
+
+import httpx
 
 
 class ObservabilityAgent:
@@ -64,7 +65,7 @@ class ObservabilityAgent:
         http_2xx = await self.query_prometheus('rate(http_requests_total{status="2xx"}[5m])')
         http_4xx = await self.query_prometheus('rate(http_requests_total{status="4xx"}[5m])')
         http_5xx = await self.query_prometheus('rate(http_requests_total{status="5xx"}[5m])')
-        http_p95 = await self.query_prometheus('histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))')
+        http_p95 = await self.query_prometheus("histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))")
 
         db_pool_size = await self.query_prometheus("db_connection_pool_size")
         db_pool_in_use = await self.query_prometheus("db_connection_pool_in_use")

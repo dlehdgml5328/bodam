@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from typing import Any, Generic, TypeVar
-from pydantic import BaseModel
+
 from fastapi import status
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from .pagination import PaginatedResponse
 
