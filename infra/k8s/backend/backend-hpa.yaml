@@ -1,0 +1,89 @@
+# Backend HorizontalPodAutoscaler
+# FastAPI 서버 자동 스케일링 설정
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: bodam-backend
+  namespace: bodam
+  labels:
+    app: bodam-backend
+    tier: backend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: bodam-backend
+
+  # 리소스 제한: 최소 1개, 최대 3개 Pod
+  minReplicas: 1
+  maxReplicas: 3
+
+  # 메트릭 기반 스케일링
+  metrics:
+    # CPU 사용률 기준 (60% 목표)
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60  # 기존 70%에서 낮춤
+
+    # 메모리 사용률 기준 (70% 목표)
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 70  # 기존 80%에서 낮춤
+
+  # 스케일링 동작 정책
+  behavior:
+    # 스케일 업 정책 (빠른 확장)
+    scaleUp:
+      stabilizationWindowSeconds: 30  # 30초 안정화 (기존 60초에서 단축)
+      policies:
+        # 100% 증가 (1개 → 2개 → 3개)
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+        # 또는 최대 2개씩 증가
+        - type: Pods
+          value: 2
+          periodSeconds: 30
+      # 위 정책 중 더 적극적인 것 선택
+      selectPolicy: Max
+
+    # 스케일 다운 정책 (보수적인 축소)
+    scaleDown:
+      stabilizationWindowSeconds: 180  # 3분 안정화 (트래픽 급감 방지)
+      policies:
+        # 50% 감소 (3개 → 2개 → 1개)
+        - type: Percent
+          value: 50
+          periodSeconds: 60
+        # 또는 최대 1개씩 감소
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+      # 위 정책 중 더 보수적인 것 선택
+      selectPolicy: Min
+
+---
+# Backend Service (ClusterIP)
+apiVersion: v1
+kind: Service
+metadata:
+  name: bodam-backend-service
+  namespace: bodam
+  labels:
+    app: bodam-backend
+spec:
+  type: ClusterIP
+  selector:
+    app: bodam-backend
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  sessionAffinity: None

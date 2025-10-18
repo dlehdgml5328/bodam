@@ -1,0 +1,285 @@
+name: Backend CI/CD
+
+# wonuk, donghee 브랜치 push 시 트리거
+on:
+  push:
+    branches:
+      - wonuk
+      - donghee
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci-cd.yml'
+
+env:
+  REGISTRY: registry.digitalocean.com/bodam
+  IMAGE_NAME: backend
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  test:
+    name: 테스트 실행
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: bodam_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: 의존성 설치
+        working-directory: ./backend
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pytest-asyncio ruff mypy
+
+      - name: Ruff 코드 검사
+        working-directory: ./backend
+        run: ruff check .
+
+      - name: MyPy 타입 검사
+        working-directory: ./backend
+        run: mypy src --ignore-missing-imports
+
+      - name: 단위 테스트 실행
+        working-directory: ./backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/bodam_test
+          REDIS_URL: redis://localhost:6379/0
+          JWT_SECRET_KEY: test-secret-key-for-ci
+          ENVIRONMENT: test
+        run: |
+          pytest tests/unit/ -v --cov=src --cov-report=xml --cov-report=term
+
+      - name: 통합 테스트 실행
+        working-directory: ./backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/bodam_test
+          REDIS_URL: redis://localhost:6379/0
+          JWT_SECRET_KEY: test-secret-key-for-ci
+          ENVIRONMENT: test
+        run: |
+          pytest tests/integration/ -v --cov=src --cov-append --cov-report=xml
+
+      - name: 성능 테스트 실행
+        working-directory: ./backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/bodam_test
+          REDIS_URL: redis://localhost:6379/0
+          ENVIRONMENT: test
+        run: |
+          pytest tests/performance/ -v
+
+      - name: 테스트 커버리지 업로드
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./backend/coverage.xml
+          flags: backend
+          name: backend-coverage
+
+  build-and-push:
+    name: Docker 이미지 빌드 및 푸시
+    needs: test
+    runs-on: ubuntu-latest
+
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tags }}
+
+    steps:
+      - name: 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Docker 메타데이터 생성
+        id: meta
+        run: |
+          if [ "${{ github.ref }}" == "refs/heads/donghee" ]; then
+            echo "tags=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:production-${{ github.sha }}" >> $GITHUB_OUTPUT
+            echo "environment=production" >> $GITHUB_OUTPUT
+          else
+            echo "tags=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:preview-${{ github.sha }}" >> $GITHUB_OUTPUT
+            echo "environment=preview" >> $GITHUB_OUTPUT
+          fi
+
+      - name: DigitalOcean Container Registry 로그인
+        uses: docker/login-action@v3
+        with:
+          registry: registry.digitalocean.com
+          username: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          password: ${{ secrets.DIGITALOCEAN_TOKEN }}
+
+      - name: Docker Buildx 설정
+        uses: docker/setup-buildx-action@v3
+
+      - name: Docker 이미지 빌드 및 푸시
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
+          build-args: |
+            PYTHON_VERSION=${{ env.PYTHON_VERSION }}
+
+  deploy:
+    name: Kubernetes 배포
+    needs: build-and-push
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 체크아웃
+        uses: actions/checkout@v4
+
+      - name: 환경 변수 설정
+        id: env
+        run: |
+          if [ "${{ github.ref }}" == "refs/heads/donghee" ]; then
+            echo "environment=production" >> $GITHUB_OUTPUT
+            echo "namespace=bodam-prod" >> $GITHUB_OUTPUT
+            echo "cluster_id=${{ secrets.DIGITALOCEAN_CLUSTER_ID_PROD }}" >> $GITHUB_OUTPUT
+          else
+            echo "environment=preview" >> $GITHUB_OUTPUT
+            echo "namespace=bodam-preview" >> $GITHUB_OUTPUT
+            echo "cluster_id=${{ secrets.DIGITALOCEAN_CLUSTER_ID_PREVIEW }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: DigitalOcean CLI 설치
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_TOKEN }}
+
+      - name: Kubernetes 인증 설정
+        run: |
+          doctl kubernetes cluster kubeconfig save ${{ steps.env.outputs.cluster_id }}
+
+      - name: 네임스페이스 생성 (존재하지 않는 경우)
+        run: |
+          kubectl create namespace ${{ steps.env.outputs.namespace }} --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Docker Registry Secret 생성
+        run: |
+          kubectl create secret docker-registry regcred \
+            --docker-server=registry.digitalocean.com \
+            --docker-username=${{ secrets.DIGITALOCEAN_TOKEN }} \
+            --docker-password=${{ secrets.DIGITALOCEAN_TOKEN }} \
+            --namespace=${{ steps.env.outputs.namespace }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: 애플리케이션 Secrets 생성
+        run: |
+          kubectl create secret generic bodam-secrets \
+            --from-literal=database-url=${{ secrets.DATABASE_URL }} \
+            --from-literal=jwt-secret=${{ secrets.JWT_SECRET_KEY }} \
+            --from-literal=together-api-key=${{ secrets.TOGETHER_AI_API_KEY }} \
+            --from-literal=admin-secret-key=${{ secrets.ADMIN_SECRET_KEY }} \
+            --namespace=${{ steps.env.outputs.namespace }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: 이미지 태그 업데이트
+        run: |
+          sed -i "s|image: bodam/backend:latest|image: ${{ needs.build-and-push.outputs.image_tag }}|g" infra/k8s/backend/backend-deployment.yaml
+          sed -i "s|namespace: bodam|namespace: ${{ steps.env.outputs.namespace }}|g" infra/k8s/backend/*.yaml
+
+      - name: Kubernetes 리소스 배포
+        run: |
+          kubectl apply -f infra/k8s/backend/configmap.yaml -n ${{ steps.env.outputs.namespace }}
+          kubectl apply -f infra/k8s/backend/backend-deployment.yaml -n ${{ steps.env.outputs.namespace }}
+          kubectl apply -f infra/k8s/backend/backend-hpa.yaml -n ${{ steps.env.outputs.namespace }}
+          kubectl apply -f infra/k8s/backend/celery-worker-hpa.yaml -n ${{ steps.env.outputs.namespace }}
+
+      - name: 배포 상태 확인
+        run: |
+          kubectl rollout status deployment/bodam-backend -n ${{ steps.env.outputs.namespace }} --timeout=5m
+
+      - name: Pod 상태 확인
+        if: always()
+        run: |
+          kubectl get pods -n ${{ steps.env.outputs.namespace }} -l app=bodam-backend
+          kubectl describe pods -n ${{ steps.env.outputs.namespace }} -l app=bodam-backend
+
+  smoke-test:
+    name: 스모크 테스트
+    needs: deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 환경 변수 설정
+        id: env
+        run: |
+          if [ "${{ github.ref }}" == "refs/heads/donghee" ]; then
+            echo "api_url=${{ secrets.PRODUCTION_API_URL }}" >> $GITHUB_OUTPUT
+          else
+            echo "api_url=${{ secrets.PREVIEW_API_URL }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Health Check 확인
+        run: |
+          for i in {1..30}; do
+            if curl -f -s ${{ steps.env.outputs.api_url }}/health; then
+              echo "✅ Health check passed"
+              exit 0
+            fi
+            echo "⏳ Waiting for health check... ($i/30)"
+            sleep 10
+          done
+          echo "❌ Health check failed"
+          exit 1
+
+      - name: API 응답 테스트
+        run: |
+          # 기본 API 엔드포인트 테스트
+          response=$(curl -s -o /dev/null -w "%{http_code}" ${{ steps.env.outputs.api_url }}/api/v1/health)
+          if [ "$response" -eq 200 ]; then
+            echo "✅ API responded with 200"
+          else
+            echo "❌ API responded with $response"
+            exit 1
+          fi
+
+      - name: 배포 알림 (Slack)
+        if: always()
+        uses: slackapi/slack-github-action@v1
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "Backend 배포 ${{ job.status }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Backend CI/CD*\n환경: ${{ needs.deploy.outputs.environment }}\n상태: ${{ job.status }}\n브랜치: ${{ github.ref_name }}\n커밋: ${{ github.sha }}"
+                  }
+                }
+              ]
+            }

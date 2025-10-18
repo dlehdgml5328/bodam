@@ -1,0 +1,95 @@
+BoDam CI/CD 및 Kubernetes 설정 파일 트리
+================================================================================
+
+/home/eugene/bodam/
+│
+├── .github/
+│   └── workflows/
+│       ├── backend-ci-cd.yml        ✨ 새로 생성 (9.6K)
+│       │   ├── 테스트: Ruff, MyPy, pytest (unit/integration/performance)
+│       │   ├── 빌드: Docker 이미지 빌드 및 DigitalOcean Registry 푸시
+│       │   ├── 배포: Kubernetes 자동 배포 (wonuk→preview, donghee→prod)
+│       │   └── 검증: 스모크 테스트, Slack 알림
+│       │
+│       └── frontend-ci-cd.yml       ✨ 새로 생성 (8.0K)
+│           ├── 테스트: ESLint, TypeScript, Jest, Playwright
+│           ├── 빌드: Next.js 프로덕션 빌드
+│           ├── 배포: Vercel (wonuk→preview, donghee→production)
+│           └── 검증: Lighthouse CI (production만)
+│
+├── infra/
+│   └── k8s/
+│       ├── backend/
+│       │   ├── backend-deployment.yaml    🔄 업데이트 (4.5K)
+│       │   │   └── 리소스 최적화: CPU 200m/500m, Memory 256Mi/512Mi (컨테이너당)
+│       │   │
+│       │   ├── backend-hpa.yaml          ✨ 새로 생성 (2.2K)
+│       │   │   ├── minReplicas: 1, maxReplicas: 3
+│       │   │   ├── CPU target: 60%, Memory target: 70%
+│       │   │   ├── Scale Up: 30초 안정화 (빠른 확장)
+│       │   │   └── Scale Down: 3분 안정화 (보수적 축소)
+│       │   │
+│       │   ├── celery-worker-hpa.yaml    ✨ 새로 생성 (3.6K)
+│       │   │   ├── minReplicas: 1, maxReplicas: 2
+│       │   │   ├── CPU target: 70%, Memory target: 75%
+│       │   │   └── 향후 Worker 분리 시 사용 가능
+│       │   │
+│       │   ├── configmap.yaml            (기존)
+│       │   └── ingress.yaml              (기존)
+│       │
+│       └── cluster-autoscaler/
+│           ├── autoscaler-config.yaml    ✨ 새로 생성 (6.7K)
+│           │   ├── 노드 범위: 1-2개
+│           │   ├── 스케일 다운 지연: 5분
+│           │   ├── 미사용 시간: 10분
+│           │   ├── 사용률 임계값: 50%
+│           │   └── Expander: least-waste
+│           │
+│           └── README.md                 ✨ 새로 생성 (3.6K)
+│               ├── 설치 가이드
+│               ├── 모니터링 방법
+│               ├── 트러블슈팅
+│               └── 비용 최적화
+│
+├── scripts/
+│   └── validate-k8s-configs.sh          ✨ 새로 생성 (6.6K, 실행 가능)
+│       ├── YAML 구문 검증
+│       ├── 리소스 계산 검증
+│       ├── HPA 설정 검증
+│       └── 워크플로우 검증
+│
+├── DEPLOYMENT.md                         ✨ 새로 생성 (9.7K)
+│   ├── GitHub Actions 설정
+│   ├── Kubernetes 배포 가이드
+│   ├── HPA 및 Cluster Autoscaler 설명
+│   ├── 모니터링 및 트러블슈팅
+│   └── 배포 체크리스트
+│
+├── CI-CD-SETUP-SUMMARY.md               ✨ 새로 생성 (8.7K)
+│   ├── 생성된 파일 목록
+│   ├── 핵심 개선 사항
+│   ├── 필수 GitHub Secrets
+│   └── 배포 순서
+│
+├── QUICK-START.md                       ✨ 새로 생성 (5.8K)
+│   ├── 5분 빠른 시작 가이드
+│   ├── 자주 사용하는 명령어
+│   ├── 트러블슈팅 팁
+│   └── 환경별 배포 흐름
+│
+└── CLAUDE.md                            (기존 프로젝트 문서)
+
+================================================================================
+범례:
+  ✨ 새로 생성된 파일
+  🔄 업데이트된 파일
+  (기존) 기존 파일 (변경 없음)
+
+================================================================================
+총 생성/수정된 파일: 10개
+  - GitHub Actions 워크플로우: 2개
+  - Kubernetes 설정: 4개 (1개 업데이트, 3개 신규)
+  - 문서: 3개
+  - 스크립트: 1개
+
+================================================================================

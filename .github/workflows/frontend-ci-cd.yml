@@ -1,0 +1,273 @@
+name: Frontend CI/CD
+
+# wonuk, donghee 브랜치 push 시 트리거
+on:
+  push:
+    branches:
+      - wonuk
+      - donghee
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-ci-cd.yml'
+
+env:
+  NODE_VERSION: '18'
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+jobs:
+  lint-and-test:
+    name: 린트 및 테스트
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Node.js 설정
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 의존성 설치
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: ESLint 검사
+        working-directory: ./frontend
+        run: npm run lint
+
+      - name: TypeScript 타입 검사
+        working-directory: ./frontend
+        run: npm run type-check
+
+      - name: Jest 단위 테스트
+        working-directory: ./frontend
+        run: npm run test:unit -- --coverage --maxWorkers=2
+        env:
+          NODE_ENV: test
+
+      - name: Playwright 설치
+        working-directory: ./frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Playwright E2E 테스트
+        working-directory: ./frontend
+        run: npm run test:e2e
+        env:
+          NODE_ENV: test
+          PLAYWRIGHT_BROWSERS_PATH: 0
+
+      - name: Playwright 리포트 업로드
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7
+
+      - name: 테스트 커버리지 업로드
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./frontend/coverage/coverage-final.json
+          flags: frontend
+          name: frontend-coverage
+
+  build:
+    name: 프로덕션 빌드 테스트
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Node.js 설정
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 의존성 설치
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: 프로덕션 빌드
+        working-directory: ./frontend
+        run: npm run build
+        env:
+          NODE_ENV: production
+          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+
+      - name: 빌드 아티팩트 검증
+        working-directory: ./frontend
+        run: |
+          if [ ! -d ".next" ]; then
+            echo "❌ .next directory not found"
+            exit 1
+          fi
+          echo "✅ Build artifacts verified"
+
+  deploy-preview:
+    name: Vercel Preview 배포
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/wonuk'
+
+    steps:
+      - name: 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Vercel CLI 설치
+        run: npm install --global vercel@latest
+
+      - name: Vercel 환경 정보 가져오기
+        working-directory: ./frontend
+        run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Vercel 빌드 (Preview)
+        working-directory: ./frontend
+        run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          NEXT_PUBLIC_API_URL: ${{ secrets.PREVIEW_API_URL }}
+
+      - name: Vercel 배포 (Preview)
+        id: deploy
+        working-directory: ./frontend
+        run: |
+          url=$(vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }})
+          echo "preview_url=$url" >> $GITHUB_OUTPUT
+          echo "✅ Preview deployed to: $url"
+
+      - name: 배포 URL 코멘트
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+              body: `🚀 Preview deployed to: ${{ steps.deploy.outputs.preview_url }}`
+            })
+
+      - name: 배포 알림 (Slack)
+        if: always()
+        uses: slackapi/slack-github-action@v1
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "Frontend Preview 배포 ${{ job.status }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Frontend Preview 배포*\n상태: ${{ job.status }}\n브랜치: wonuk\nURL: ${{ steps.deploy.outputs.preview_url }}"
+                  }
+                }
+              ]
+            }
+
+  deploy-production:
+    name: Vercel Production 배포
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/donghee'
+
+    steps:
+      - name: 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Vercel CLI 설치
+        run: npm install --global vercel@latest
+
+      - name: Vercel 환경 정보 가져오기
+        working-directory: ./frontend
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Vercel 빌드 (Production)
+        working-directory: ./frontend
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          NEXT_PUBLIC_API_URL: ${{ secrets.PRODUCTION_API_URL }}
+
+      - name: Vercel 배포 (Production)
+        id: deploy
+        working-directory: ./frontend
+        run: |
+          url=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }})
+          echo "production_url=$url" >> $GITHUB_OUTPUT
+          echo "✅ Production deployed to: $url"
+
+      - name: Lighthouse CI 실행
+        uses: treosh/lighthouse-ci-action@v10
+        with:
+          urls: |
+            ${{ steps.deploy.outputs.production_url }}
+          uploadArtifacts: true
+          temporaryPublicStorage: true
+
+      - name: 배포 알림 (Slack)
+        if: always()
+        uses: slackapi/slack-github-action@v1
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "Frontend Production 배포 ${{ job.status }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Frontend Production 배포*\n상태: ${{ job.status }}\n브랜치: donghee\nURL: ${{ steps.deploy.outputs.production_url }}"
+                  }
+                }
+              ]
+            }
+
+  smoke-test:
+    name: 스모크 테스트
+    needs: [deploy-preview, deploy-production]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: 환경 변수 설정
+        id: env
+        run: |
+          if [ "${{ github.ref }}" == "refs/heads/donghee" ]; then
+            echo "app_url=${{ needs.deploy-production.outputs.production_url }}" >> $GITHUB_OUTPUT
+          else
+            echo "app_url=${{ needs.deploy-preview.outputs.preview_url }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 홈페이지 접근 테스트
+        run: |
+          for i in {1..10}; do
+            response=$(curl -s -o /dev/null -w "%{http_code}" ${{ steps.env.outputs.app_url }})
+            if [ "$response" -eq 200 ]; then
+              echo "✅ Homepage accessible (HTTP $response)"
+              exit 0
+            fi
+            echo "⏳ Waiting for homepage... ($i/10, HTTP $response)"
+            sleep 5
+          done
+          echo "❌ Homepage not accessible"
+          exit 1
+
+      - name: 렌더링 테스트
+        run: |
+          response=$(curl -s ${{ steps.env.outputs.app_url }})
+          if echo "$response" | grep -q "보담"; then
+            echo "✅ Page rendered successfully"
+          else
+            echo "❌ Page rendering failed"
+            exit 1
+          fi
