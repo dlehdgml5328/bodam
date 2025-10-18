@@ -96,10 +96,10 @@ export default function MyPage() {
     }
 
     // 사용자 타입과 단체 정보 업데이트
-    const storedUserType = localStorage.getItem('userType') || 'individual';
+    const storedUserType = (localStorage.getItem('userType') || 'individual') as 'individual' | 'group';
     const storedGroupNumber = localStorage.getItem('groupNumber') || '';
     const storedUserNickname = localStorage.getItem('userNickname') || '소방이';
-    
+
     setUserType(storedUserType);
     setGroupNumber(storedGroupNumber);
     
