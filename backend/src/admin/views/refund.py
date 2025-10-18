@@ -4,7 +4,7 @@ import logging
 import uuid
 
 from sqladmin import ModelView
-from sqladmin.actions import action
+# from sqladmin.actions import action  # sqladmin 0.16.0에서는 actions 미지원
 from starlette.requests import Request
 from starlette.responses import RedirectResponse
 
@@ -87,13 +87,13 @@ class RefundAdmin(ModelView, model=Refund):
         Refund.created_at: "요청일시",
     }
 
-    @action(
-        name="bulk_approve",
-        label="선택한 환불 승인",
-        confirmation="선택한 환불 요청을 승인하시겠습니까? (Toss Payments API 호출)",
-        add_in_detail=False,
-        add_in_list=True,
-    )
+    # @action(  # sqladmin 0.16.0에서는 actions 미지원 - API로만 사용
+    #     name="bulk_approve",
+    #     label="선택한 환불 승인",
+    #     confirmation="선택한 환불 요청을 승인하시겠습니까? (Toss Payments API 호출)",
+    #     add_in_detail=False,
+    #     add_in_list=True,
+    # )
     async def bulk_approve_action(self, request: Request) -> RedirectResponse:
         """
         대량 환불 승인 액션
@@ -145,13 +145,13 @@ class RefundAdmin(ModelView, model=Refund):
             status_code=302,
         )
 
-    @action(
-        name="bulk_reject",
-        label="선택한 환불 거부",
-        confirmation="선택한 환불 요청을 거부하시겠습니까?",
-        add_in_detail=False,
-        add_in_list=True,
-    )
+    # @action(  # sqladmin 0.16.0에서는 actions 미지원 - API로만 사용
+    #     name="bulk_reject",
+    #     label="선택한 환불 거부",
+    #     confirmation="선택한 환불 요청을 거부하시겠습니까?",
+    #     add_in_detail=False,
+    #     add_in_list=True,
+    # )
     async def bulk_reject_action(self, request: Request) -> RedirectResponse:
         """
         대량 환불 거부 액션
