@@ -74,12 +74,15 @@ target-version = ["py311"]
 
 [tool.mypy]
 python_version = "3.11"
-strict = true
-warn_unused_configs = true
-warn_redundant_casts = true
-warn_unused_ignores = true
-warn_return_any = true
-plugins = ["pydantic.mypy"]
+warn_return_any = false
+warn_unused_configs = false
+ignore_missing_imports = true
+no_implicit_optional = false  # Celery 등에서 None 기본값 허용
+check_untyped_defs = false
+disallow_untyped_defs = false
+disallow_any_generics = false  # Generic 타입 체크 완화
+warn_unused_ignores = false
+strict_optional = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

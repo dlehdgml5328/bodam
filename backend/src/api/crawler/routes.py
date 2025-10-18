@@ -19,7 +19,7 @@ from src.api.crawler.schemas import (
     CrawlJobResponse,
     CreateCrawlJobRequest,
 )
-from src.database import get_db
+from src.database.connection import get_session
 from src.models.crawled_content import CrawledContent
 from src.models.selenium_crawl_job import JobStatus, SeleniumCrawlJob
 from src.workers.selenium_crawler_worker import crawl_url
@@ -32,7 +32,7 @@ router = APIRouter(prefix="/api/crawler", tags=["crawler"])
 @router.post("/jobs", response_model=CrawlJobResponse, status_code=201)
 async def create_crawl_job(
     request: CreateCrawlJobRequest,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_session)
 ):
     """
     Create a new crawl job
@@ -66,7 +66,7 @@ async def list_crawl_jobs(
     status: Optional[str] = Query(None, description="Filter by status"),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_session)
 ):
     """
     List crawl jobs with pagination
@@ -100,7 +100,7 @@ async def list_crawl_jobs(
 @router.get("/jobs/{job_id}", response_model=CrawlJobDetailResponse)
 async def get_crawl_job(
     job_id: UUID,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_session)
 ):
     """
     Get crawl job details
@@ -118,7 +118,7 @@ async def get_crawl_job(
 @router.post("/jobs/{job_id}/retry", response_model=CrawlJobResponse)
 async def retry_crawl_job(
     job_id: UUID,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_session)
 ):
     """
     Manually retry a failed/timed-out job
@@ -153,7 +153,7 @@ async def retry_crawl_job(
 @router.delete("/jobs/{job_id}", status_code=204)
 async def cancel_crawl_job(
     job_id: UUID,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_session)
 ):
     """
     Cancel a pending or running crawl job
@@ -184,7 +184,7 @@ async def cancel_crawl_job(
 @router.get("/content/{job_id}", response_model=CrawledContentResponse)
 async def get_crawled_content(
     job_id: UUID,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_session)
 ):
     """
     Get crawled content for completed job

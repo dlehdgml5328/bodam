@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.connection import get_db_session
+from src.database.connection import get_session
 from src.integrations.toss_payments import TossPaymentsClient
 from src.models.refund import Refund
 from src.services.refund_service import BulkRefundResult, RefundService
@@ -86,7 +86,7 @@ async def get_admin_id() -> uuid.UUID:
 
 # Dependency: RefundService
 async def get_refund_service(
-    session: Annotated[AsyncSession, Depends(get_db_session)],
+    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> RefundService:
     """RefundService 의존성 주입"""
     payments_client = TossPaymentsClient()
@@ -236,7 +236,7 @@ async def reject_refund(
 @router.get("/{refund_id}", response_model=RefundDetailResponse, status_code=status.HTTP_200_OK)
 async def get_refund_detail(
     refund_id: uuid.UUID,
-    session: Annotated[AsyncSession, Depends(get_db_session)],
+    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> RefundDetailResponse:
     """환불 상세 조회"""
     refund = await session.get(Refund, refund_id)
@@ -258,7 +258,7 @@ async def get_refund_detail(
 
 @router.get("/audit-logs/refunds", status_code=status.HTTP_200_OK)
 async def get_refund_audit_logs(
-    session: Annotated[AsyncSession, Depends(get_db_session)],
+    session: Annotated[AsyncSession, Depends(get_session)],
     limit: int = 50,
 ) -> dict:
     """
