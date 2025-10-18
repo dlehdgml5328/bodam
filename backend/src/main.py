@@ -1,8 +1,20 @@
 from dotenv import load_dotenv
 load_dotenv()
 
+# uvloop 설정 (asyncio 이벤트 루프를 uvloop으로 교체하여 성능 향상)
+import asyncio
+import sys
+
+if sys.platform != "win32":  # Windows는 uvloop 미지원
+    try:
+        import uvloop
+        asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+    except ImportError:
+        pass  # uvloop이 설치되지 않았으면 기본 이벤트 루프 사용
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import ORJSONResponse
 
 from .api import (
     auth,
@@ -42,7 +54,11 @@ from .admin.auth import AdminAuthBackend
 from .admin import register_admin_views
 from .database.connection import engine
 
-app = FastAPI(title="BoDam API")
+# orjson을 기본 JSON 응답 클래스로 설정 (JSON 직렬화 성능 향상)
+app = FastAPI(
+    title="BoDam API",
+    default_response_class=ORJSONResponse  # 표준 JSONResponse 대신 ORJSONResponse 사용
+)
 
 # Get security settings
 settings = get_security_settings()
