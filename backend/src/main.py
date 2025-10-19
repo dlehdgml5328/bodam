@@ -61,9 +61,9 @@ from .api.admin import (
     search as admin_search,
 )
 from .api.webhooks import toss
-from .security_config import get_security_settings
 from .database.connection import engine
 from .middleware.auth import AuthMiddleware
+from .security_config import get_security_settings
 
 # orjson을 기본 JSON 응답 클래스로 설정 (JSON 직렬화 성능 향상)
 app = FastAPI(

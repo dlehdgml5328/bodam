@@ -51,7 +51,7 @@ jobs:
 
       - name: Playwright 설치
         working-directory: ./frontend
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps
 
       - name: Playwright E2E 테스트
         working-directory: ./frontend
