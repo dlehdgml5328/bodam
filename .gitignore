@@ -74,4 +74,5 @@ dist/
 .eslintcache
 
 # Sensitive setup files
-SETUP_COMPLETE.mdbackend/firebase-service-account.json
+SETUP_COMPLETE.md
+backend/firebase-service-account.json
