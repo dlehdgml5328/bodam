@@ -3,14 +3,16 @@
 importScripts('https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/9.0.0/firebase-messaging-compat.js');
 
-// Firebase 설정
+// Firebase 설정 (환경변수에서 로드)
+// Note: Service Worker에서는 process.env를 사용할 수 없으므로
+// 빌드 시 Next.js가 NEXT_PUBLIC_ 변수를 주입합니다
 firebase.initializeApp({
-  apiKey: 'AIzaSyAkEiG4CdQ2N8ThjBSOQotor_v34QeO3hA',
-  authDomain: 'bodam-335a1.firebaseapp.com',
-  projectId: 'bodam-335a1',
-  storageBucket: 'bodam-335a1.firebasestorage.app',
-  messagingSenderId: '109636196643',
-  appId: '1:109636196643:web:4d2dd587b42872bfee5496'
+  apiKey: self.FIREBASE_API_KEY || 'YOUR_API_KEY',
+  authDomain: self.FIREBASE_AUTH_DOMAIN || 'YOUR_AUTH_DOMAIN',
+  projectId: self.FIREBASE_PROJECT_ID || 'YOUR_PROJECT_ID',
+  storageBucket: self.FIREBASE_STORAGE_BUCKET || 'YOUR_STORAGE_BUCKET',
+  messagingSenderId: self.FIREBASE_MESSAGING_SENDER_ID || 'YOUR_SENDER_ID',
+  appId: self.FIREBASE_APP_ID || 'YOUR_APP_ID'
 });
 
 const messaging = firebase.messaging();
