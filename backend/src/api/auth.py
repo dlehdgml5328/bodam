@@ -19,6 +19,7 @@ from src.security.passwords import hash_password, verify_password
 from src.security.session import (
     clear_session_cookies,
     get_current_user,
+    get_current_user_with_csrf,
     issue_session_tokens,
 )
 from src.services.password_reset_service import (
@@ -46,7 +47,8 @@ class SignupRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8)
     name: str = Field(min_length=2)
-    phone: str | None = Field(default=None, pattern=r"^01[0-9]{8,9}$")
+    phone: str = Field(pattern=r"^01[0-9]{8,9}$")
+    id_number: str = Field(pattern=r"^\d{6}-?\d{7}$")  # 123456-1234567 또는 1234561234567
 
 
 class SignupResponse(BaseModel):
@@ -91,6 +93,7 @@ async def signup(
             password_hash=hash_password(payload.password),
             name=payload.name,
             phone=payload.phone,
+            id_number=payload.id_number,
         )
     except UserAlreadyExistsError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="EMAIL_EXISTS") from exc
@@ -327,6 +330,60 @@ async def social_callback(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"OAuth 인증 실패: {str(exc)}"
         )
+
+
+@router.get("/me")
+async def get_current_user_info(
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """현재 로그인한 사용자 정보 조회"""
+    return {
+        "id": str(current_user.id),
+        "email": current_user.email,
+        "name": current_user.name,
+        "phone": current_user.phone,
+        "id_number": current_user.id_number,
+        "role": current_user.role.value if current_user.role else "user",
+        "created_at": current_user.created_at.isoformat() if current_user.created_at else None,
+    }
+
+
+class UpdateProfileRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=2)
+    phone: str | None = Field(default=None, pattern=r"^01[0-9]{8,9}$")
+    id_number: str | None = Field(default=None, pattern=r"^\d{6}-?\d{7}$")
+
+
+@router.patch("/me")
+async def update_current_user_profile(
+    payload: UpdateProfileRequest,
+    current_user: User = Depends(get_current_user_with_csrf),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """현재 로그인한 사용자 프로필 수정"""
+    user_service = UserService(session)
+
+    # None이 아닌 필드만 업데이트
+    update_fields = {}
+    if payload.name is not None:
+        update_fields["name"] = payload.name
+    if payload.phone is not None:
+        update_fields["phone"] = payload.phone
+    if payload.id_number is not None:
+        update_fields["id_number"] = payload.id_number
+
+    updated_user = await user_service.update_user(current_user.id, **update_fields)
+    await session.commit()
+
+    return {
+        "id": str(updated_user.id),
+        "email": updated_user.email,
+        "name": updated_user.name,
+        "phone": updated_user.phone,
+        "id_number": updated_user.id_number,
+        "role": updated_user.role.value if updated_user.role else "user",
+        "message": "프로필이 업데이트되었습니다",
+    }
 
 
 __all__ = ["router"]

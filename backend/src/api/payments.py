@@ -64,7 +64,19 @@ async def confirm_payment(
     service = DonationService(session, toss_client)
 
     try:
-        # 1. Toss API로 결제 승인
+        # 1. 먼저 DB에서 donation 찾기 (중복 승인 방지)
+        donation = await service.get_donation_by_order_id(payload.order_id)
+
+        if donation.status == DonationStatus.COMPLETED:
+            logger.warning("Donation already completed: %s", donation.id)
+            return PaymentConfirmResponse(
+                donation_id=donation.id,
+                status=donation.status,
+                payment_key=donation.toss_payment_key or payload.payment_key,
+                approved_at=donation.updated_at.isoformat() if donation.updated_at else donation.created_at.isoformat(),
+            )
+
+        # 2. Toss API로 결제 승인
         confirmation = await toss_client.confirm_payment(
             payment_key=payload.payment_key,
             order_id=payload.order_id,
@@ -78,18 +90,6 @@ async def confirm_payment(
             confirmation.approved_at,
         )
 
-        # 2. DB에서 donation 찾기
-        donation = await service.get_donation_by_order_id(payload.order_id)
-
-        if donation.status == DonationStatus.COMPLETED:
-            logger.warning("Donation already completed: %s", donation.id)
-            return PaymentConfirmResponse(
-                donation_id=donation.id,
-                status=donation.status,
-                payment_key=confirmation.payment_key,
-                approved_at=confirmation.approved_at.isoformat(),
-            )
-
         # 3. Donation 상태 업데이트
         await service.complete_donation(
             donation_id=donation.id,
@@ -99,6 +99,24 @@ async def confirm_payment(
         )
 
         logger.info("Donation completed: donation_id=%s", donation.id)
+
+        # 4. 기부 완료 FCM 푸시 알림 전송
+        if donation.user and donation.user.fcm_token:
+            from src.integrations.firebase_messaging import firebase_service
+
+            title = "✅ 기부가 완료되었습니다"
+            body = f"{int(donation.amount):,}원 기부해주셔서 감사합니다!"
+            url = "/mypage"
+
+            await firebase_service.send_notification(
+                token=donation.user.fcm_token,
+                title=title,
+                body=body,
+                url=url,
+                data={"donation_id": str(donation.id), "type": "donation_complete"}
+            )
+
+            logger.info("Sent donation complete notification to user: %s", donation.user.email)
 
         return PaymentConfirmResponse(
             donation_id=donation.id,
@@ -216,11 +234,22 @@ async def billing_key_callback(
                 "status": "already_authorized",
             }
 
-        # TODO: Toss API로 빌링키 조회 및 저장
-        # 현재는 auth_key를 billing_key로 저장
+        # Toss API로 빌링키 조회
+        if not payload.auth_key:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="auth_key is required",
+            )
+
+        billing_key = await toss_client.get_billing_key(
+            customer_key=payload.customer_key,
+            auth_key=payload.auth_key,
+        )
+
+        # 빌링키 저장
         await service.update_subscription_billing_key(
             subscription_id=subscription.id,
-            billing_key=payload.auth_key or f"billing_{uuid.uuid4()}",
+            billing_key=billing_key,
         )
 
         logger.info("Billing key saved for subscription: %s", subscription.id)

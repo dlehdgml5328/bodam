@@ -6,6 +6,7 @@ import Button from '@/components/base/Button';
 import { ChangeEvent, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { loadTossPayments } from '@tosspayments/payment-sdk';
+import { apiRequest } from '@/lib/api';
 
 export default function DonationsPage() {
   const router = useRouter();
@@ -36,14 +37,6 @@ export default function DonationsPage() {
   // 기부 내역 조회 모달 상태 추가
   const [showDonationHistoryModal, setShowDonationHistoryModal] = useState(false);
   
-  // 단체 코드 관련 상태 추가
-  const [groupCode, setGroupCode] = useState('');
-  const [isGroupDonation, setIsGroupDonation] = useState(false);
-  const [groupInfo, setGroupInfo] = useState<{
-    name: string;
-    type: string;
-  } | null>(null);
-  
   // 정기 기부 관련 상태 추가
   const [isRegularDonation, setIsRegularDonation] = useState(false);
   const [regularCycle, setRegularCycle] = useState<'monthly' | 'quarterly' | 'yearly'>('monthly');
@@ -57,18 +50,42 @@ export default function DonationsPage() {
 
   // 로그인 상태 감지
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const userInfo = {
-    name: '홍길동',
-    email: 'hong@example.com',
-    phone: '010-1234-5678',
-    idNumber: '123456-*******'
-  };
+  const [userInfo, setUserInfo] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    idNumber: ''
+  });
 
   // 기부 방식 관련 상태 추가
   const [donationMode, setDonationMode] = useState<'single' | 'multiple'>('single');
   const [multipleType, setMultipleType] = useState<'split' | 'each' | 'custom'>('split');
   const [selectedFireStations, setSelectedFireStations] = useState<string[]>([]);
   const [customAmounts, setCustomAmounts] = useState<{[key: string]: number}>({});
+
+  // 소방서 목록 상태 추가
+  const [fireStations, setFireStations] = useState<Array<{
+    id: string;
+    name: string;
+    region: string;
+    district: string;
+  }>>([]);
+  const [isLoadingStations, setIsLoadingStations] = useState(true);
+
+  // 기부 통계 상태 추가
+  const [donationStats, setDonationStats] = useState({
+    total_amount: 0,
+    total_cups: 0,
+    total_users: 0,
+  });
+
+  // 실시간 기부 현황 상태 추가
+  const [recentDonations, setRecentDonations] = useState<Array<{
+    donor: string;
+    amount: number;
+    cups: number;
+    time: string;
+  }>>([]);
 
   // 기존 코드 삽입 시작
   const amounts = [
@@ -100,52 +117,186 @@ export default function DonationsPage() {
     '제주특별자치도',
   ];
 
-  const fireStations = [
-    { id: 1, name: '서울중부소방서', region: '서울특별시', district: '중구' },
-    { id: 2, name: '서울강남소방서', region: '서울특별시', district: '강남구' },
-    { id: 3, name: '서울서초소방서', region: '서울특별시', district: '서초구' },
-    { id: 4, name: '서울용산소방서', region: '서울특별시', district: '용산구' },
-    { id: 5, name: '서울마포소방서', region: '서울특별시', district: '마포구' },
-    { id: 6, name: '부산해운대소방서', region: '부산광역시', district: '해운대구' },
-    { id: 7, name: '부산중부소방서', region: '부산광역시', district: '중구' },
-    { id: 8, name: '부산서부소방서', region: '부산광역시', district: '서구' },
-    { id: 9, name: '부산동래소방서', region: '부산광역시', district: '동래구' },
-    { id: 10, name: '인천계양소방서', region: '인천광역시', district: '계양구' },
-    { id: 11, name: '인천중부소방서', region: '인천광역시', district: '중구' },
-    { id: 12, name: '인천남동소방서', region: '인천광역시', district: '남동구' },
-    { id: 13, name: '대구중구소방서', region: '대구광역시', district: '중구' },
-    { id: 14, name: '대구수성소방서', region: '대구광역시', district: '수성구' },
-    { id: 15, name: '광주서구소방서', region: '광주광역시', district: '서구' },
-    { id: 16, name: '광주남구소방서', region: '광주광역시', district: '남구' },
-    { id: 17, name: '대전유성소방서', region: '대전광역시', district: '유성구' },
-    { id: 18, name: '대전서구소방서', region: '대전광역시', district: '서구' },
-    { id: 19, name: '울산남구소방서', region: '울산광역시', district: '남구' },
-    { id: 20, name: '울산중구소방서', region: '울산광역시', district: '중구' },
-    { id: 21, name: '경기성남소방서', region: '경기도', district: '성남시' },
-    { id: 22, name: '경기수원소방서', region: '경기도', district: '수원시' },
-    { id: 23, name: '경기안양소방서', region: '경기도', district: '안양시' },
-    { id: 24, name: '경기고양소방서', region: '경기도', district: '고양시' },
-    { id: 25, name: '강원춘천소방서', region: '강원도', district: '춘천시' },
-    { id: 26, name: '강원원주소방서', region: '강원도', district: '원주시' },
-    { id: 27, name: '충북청주소방서', region: '충청북도', district: '청주시' },
-    { id: 28, name: '충북충주소방서', region: '충청북도', district: '충주시' },
-    { id: 29, name: '충남천안소방서', region: '충청남도', district: '천안시' },
-    { id: 30, name: '충남아산소방서', region: '충청남도', district: '아산시' },
-    { id: 31, name: '전북전주소방서', region: '전라북도', district: '전주시' },
-    { id: 32, name: '전북익산소방서', region: '전라북도', district: '익산시' },
-    { id: 33, name: '전남목포소방서', region: '전라남도', district: '목포시' },
-    { id: 34, name: '전남순천소방서', region: '전라남도', district: '순천시' },
-    { id: 35, name: '경북포항소방서', region: '경상북도', district: '포항시' },
-    { id: 36, name: '경북구미소방서', region: '경상북도', district: '구미시' },
-    { id: 37, name: '경남창원소방서', region: '경상남도', district: '창원시' },
-    { id: 38, name: '경남김해소방서', region: '경상남도', district: '김해시' },
-    { id: 39, name: '제주제주소방서', region: '제주특별자치도', district: '제주시' },
-    { id: 40, name: '제주서귀포소방서', region: '제주특별자치도', district: '서귀포시' },
-  ];
+  // 로그인 상태 및 사용자 정보 확인
+  useEffect(() => {
+    const checkLoginStatus = async () => {
+      const loggedIn = localStorage.getItem('isLoggedIn') === 'true';
+      setIsLoggedIn(loggedIn);
+
+      if (loggedIn) {
+        try {
+          const userData = await apiRequest<{
+            id: string;
+            email: string;
+            name: string;
+            phone: string;
+            id_number: string;
+            role: string;
+            created_at: string;
+          }>('/auth/me');
+
+          console.log('✅ API에서 받은 사용자 데이터:', userData);
+          setUserInfo({
+            name: userData.name || '',
+            email: userData.email || '',
+            phone: userData.phone || '',
+            idNumber: userData.id_number || ''
+          });
+          setDonorName(userData.name || '');
+          setDonorEmail(userData.email || '');
+          setDonorPhone(userData.phone || '');
+          setDonorIdNumber(userData.id_number || '');
+          console.log('✅ State 업데이트 완료 - 전화번호:', userData.phone, '주민등록번호:', userData.id_number);
+        } catch (error) {
+          console.error('사용자 정보 로딩 실패:', error);
+          // 401 에러 시 로그인 상태 초기화
+          localStorage.removeItem('isLoggedIn');
+          setIsLoggedIn(false);
+        }
+      }
+    };
+
+    checkLoginStatus();
+  }, []);
+
+  // 백엔드 API에서 소방서 목록 가져오기
+  useEffect(() => {
+    const fetchFireStations = async () => {
+      try {
+        setIsLoadingStations(true);
+        const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+        console.log('🔥 소방서 목록 API 호출:', `${apiBaseUrl}/stations?limit=1000`);
+        const response = await fetch(`${apiBaseUrl}/stations?limit=1000`);
+        if (!response.ok) {
+          throw new Error('소방서 목록 조회 실패');
+        }
+        const data = await response.json();
+        console.log('✅ 소방서 목록 로드 완료:', data.stations?.length, '개', data.stations);
+        setFireStations(data.stations || []);
+      } catch (error) {
+        console.error('❌ 소방서 목록 로드 오류:', error);
+        alert('소방서 목록을 불러오는데 실패했습니다. 페이지를 새로고침해주세요.');
+      } finally {
+        setIsLoadingStations(false);
+      }
+    };
+
+    fetchFireStations();
+  }, []);
+
+  // 기부 통계 데이터 가져오기
+  useEffect(() => {
+    const fetchDonationStats = async () => {
+      try {
+        const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+        const response = await fetch(`${apiBaseUrl}/stats`);
+        if (!response.ok) {
+          throw new Error('통계 데이터 조회 실패');
+        }
+        const data = await response.json();
+        setDonationStats({
+          total_amount: Number(data.total_amount) || 0,
+          total_cups: Number(data.total_cups) || 0,
+          total_users: Number(data.total_users) || 0,
+        });
+      } catch (error) {
+        console.error('통계 데이터 로드 오류:', error);
+      }
+    };
+
+    fetchDonationStats();
+  }, []);
+
+  // 실시간 기부 현황 가져오기
+  useEffect(() => {
+    const fetchRecentDonations = async () => {
+      try {
+        const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+        const response = await fetch(`${apiBaseUrl}/donations/recent?limit=5`);
+        if (!response.ok) {
+          throw new Error('최근 기부 내역 조회 실패');
+        }
+        const data = await response.json();
+        console.log('최근 기부 내역 API 응답:', data);
+        const donations = data.donations || [];
+        console.log('기부 내역 개수:', donations.length);
+
+        // 데이터를 실시간 기부 현황 형식으로 변환
+        const formatted = donations.map((d: any) => {
+          const amount = Number(d.amount) || 0;
+          const cups = Math.floor(amount / 3000);
+
+          // 기부자 이름 마스킹 (익명이면 "익명", 아니면 첫 글자 + **)
+          let donor = '익명';
+          if (!d.is_anonymous && d.donor_name) {
+            donor = d.donor_name.charAt(0) + '**';
+          }
+
+          // 시간 계산 (몇 분 전)
+          const createdAt = new Date(d.created_at);
+          const now = new Date();
+          const diffMs = now.getTime() - createdAt.getTime();
+          const diffMins = Math.floor(diffMs / 60000);
+
+          let time = '';
+          if (diffMins < 1) {
+            time = '방금 전';
+          } else if (diffMins < 60) {
+            time = `${diffMins}분 전`;
+          } else if (diffMins < 1440) {
+            time = `${Math.floor(diffMins / 60)}시간 전`;
+          } else {
+            time = `${Math.floor(diffMins / 1440)}일 전`;
+          }
+
+          return {
+            donor,
+            amount,
+            cups,
+            time,
+          };
+        });
+
+        console.log('포맷된 기부 내역:', formatted);
+        setRecentDonations(formatted);
+      } catch (error) {
+        console.error('최근 기부 내역 로드 오류:', error);
+      }
+    };
+
+    fetchRecentDonations();
+
+    // 30초마다 새로고침
+    const interval = setInterval(fetchRecentDonations, 30000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // 지역 이름 매핑 (프론트엔드 표시명 -> 백엔드 DB 값)
+  const regionMapping: { [key: string]: string } = {
+    '서울특별시': '서울',
+    '부산광역시': '부산',
+    '인천광역시': '인천',
+    '대구광역시': '대구',
+    '광주광역시': '광주',
+    '대전광역시': '대전',
+    '울산광역시': '울산',
+    '세종특별자치시': '세종',
+    '경기도': '경기',
+    '강원도': '강원',
+    '충청북도': '충청북',
+    '충청남도': '충청남',
+    '전라북도': '전북',
+    '전라남도': '전라남',
+    '경상북도': '경상북',
+    '경상남도': '경상남',
+    '제주특별자치도': '제주',
+  };
 
   // 지역별 소방서 필터링
   const getFireStationsByRegion = (region: string) => {
-    return fireStations.filter((station) => station.region === region);
+    const dbRegion = regionMapping[region] || region;
+    return fireStations.filter((station) => station.region === dbRegion);
   };
 
   // 내 위치 기반 추천 소방서 (실제 크롤링 데이터 기반)
@@ -235,59 +386,6 @@ export default function DonationsPage() {
     { value: 'yearly', label: '연간', description: '1년마다 기부' }
   ];
 
-  // 단체 코드 검증
-  const verifyGroupCode = async () => {
-    if (!groupCode.trim()) {
-      alert('단체 코드를 입력해주세요.');
-      return;
-    }
-
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    if (groupCode.startsWith('GRP')) {
-      const mockGroupInfo = {
-        name: '테크솔루션 (기업)',
-        type: '기업'
-      };
-      setGroupInfo(mockGroupInfo);
-      setIsGroupDonation(true);
-      alert(`단체 확인 완료: ${mockGroupInfo.name}`);
-    } else {
-      alert('유효하지 않은 단체 코드입니다. 다시 확인해주세요.');
-    }
-  };
-
-  // 단체 기부 해제
-  const clearGroupCode = () => {
-    setGroupCode('');
-    setIsGroupDonation(false);
-    setGroupInfo(null);
-  };
-
-  // 단체 기관명 자동 검색
-  const searchGroupByCode = (input: string) => {
-    if (!input.trim()) {
-      setGroupInfo(null);
-      return;
-    }
-
-    // 실제로는 서버 API 호출하여 사업자등록번호나 기부코드로 기관명 검색
-    const mockOrganizations: { [key: string]: string } = {
-      'GRP123456': '테크솔루션 (기업)',
-      'GRP789012': '강남FC축구회',
-      'GRP345678': '봉사단체 나눔'
-    };
-
-    const foundOrg = mockOrganizations[input];
-    if (foundOrg) {
-      setGroupInfo({
-        name: foundOrg,
-        type: '기업'
-      });
-    } else {
-      setGroupInfo(null);
-    }
-  };
 
   // 비회원 이메일 인증 발송
   const sendGuestEmailVerification = async () => {
@@ -409,12 +507,20 @@ export default function DonationsPage() {
   };
 
   const handleUseAccountInfo = (checked: boolean) => {
+    console.log('🔘 계정 정보 사용하기 클릭:', checked);
+    console.log('📋 현재 userInfo:', userInfo);
     setUseAccountInfo(checked);
     if (checked && isLoggedIn) {
       setDonorName(userInfo.name);
       setDonorEmail(userInfo.email);
       setDonorPhone(userInfo.phone);
       setDonorIdNumber(userInfo.idNumber);
+      console.log('✅ 폼 필드 업데이트:', {
+        name: userInfo.name,
+        email: userInfo.email,
+        phone: userInfo.phone,
+        idNumber: userInfo.idNumber
+      });
     } else {
       setDonorName('');
       setDonorEmail('');
@@ -423,10 +529,16 @@ export default function DonationsPage() {
     }
   };
 
-  const handleFireStationSelect = (stationName: string) => {
-    setSelectedFireStation(stationName);
+  const handleFireStationSelect = (stationId: string, stationName: string) => {
+    setSelectedFireStation(stationId);
     setSearchFireStation(stationName);
     setShowFireStationList(false);
+  };
+
+  // 선택된 소방서 이름 가져오기
+  const getSelectedFireStationName = () => {
+    const station = fireStations.find(s => s.id === selectedFireStation);
+    return station ? station.name : '';
   };
 
   const handleRegionSelect = (region: string) => {
@@ -480,24 +592,9 @@ export default function DonationsPage() {
     }
 
     // 기존 검증 로직 유지
-    if (!isGroupDonation) {
-      if (!isAnonymous && !donorName.trim()) {
-        alert('기부자명을 입력해주세요.');
-        return;
-      }
-    } else {
-      if (!groupCode.trim()) {
-        alert('단체 코드를 입력해주세요.');
-        return;
-      }
-      if (!groupInfo) {
-        alert('올바른 단체 코드를 입력해주세요.');
-        return;
-      }
-      if (!donorName.trim()) {
-        alert('기부자 개인 이름을 입력해주세요.');
-        return;
-      }
+    if (!isAnonymous && !donorName.trim()) {
+      alert('기부자명을 입력해주세요.');
+      return;
     }
 
     if (!donorEmail.trim()) {
@@ -577,8 +674,8 @@ export default function DonationsPage() {
       // 공통 필드 추가
       donationData = {
         ...donationData,
-        donorName: isGroupDonation 
-          ? (isAnonymous ? groupInfo?.name || '단체' : `${donorName} (${groupInfo?.name})`)
+        donorName: false 
+          ? (isAnonymous ? null?.name || '단체' : `${donorName} (${null?.name})`)
           : (isAnonymous ? '익명' : donorName || '익명'),
         donorEmail: donorEmail,
         donorPhone: donorPhone,
@@ -586,10 +683,10 @@ export default function DonationsPage() {
         message: message,
         isAnonymous: isAnonymous,
         needReceipt: needReceipt,
-        isGroupDonation: isGroupDonation,
-        groupCode: isGroupDonation ? groupCode : null,
-        groupInfo: isGroupDonation ? groupInfo : null,
-        individualDonorName: isGroupDonation ? donorName : null,
+        false: false,
+        null: false ? null : null,
+        null: false ? null : null,
+        individualDonorName: false ? donorName : null,
         isRegularDonation: isRegularDonation,
         regularCycle: isRegularDonation ? regularCycle : null,
         startDate: isRegularDonation ? startDate : null,
@@ -598,15 +695,13 @@ export default function DonationsPage() {
       console.log('기부 데이터:', donationData);
 
       // 백엔드 API 호출하여 기부 생성 및 결제 URL 받기
-      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(`${apiBaseUrl}/donations`, {
+      const checkoutData = await apiRequest<{
+        donation_id: string;
+        order_id: string;
+        payment_url?: string;
+        billing_auth_url?: string;
+      }>('/donations', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(isLoggedIn ? {
-            'Authorization': `Bearer ${sessionStorage.getItem('bodam_access_token')}`
-          } : {})
-        },
         body: JSON.stringify({
           mode: donationMode,
           amount: donationData.amount,
@@ -627,23 +722,16 @@ export default function DonationsPage() {
           message: message,
         })
       });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || '기부 생성 실패');
-      }
-
-      const checkoutData = await response.json();
       const orderId = checkoutData.order_id;
 
       const tossClientKey = process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY || 'test_ck_oEjb0gm23PYMm6epMNvoVpGwBJn5';
       const tossPayments = await loadTossPayments(tossClientKey);
       let orderName = '';
-      
+
       if (donationMode === 'single') {
-        orderName = `${selectedFireStation} ${isRegularDonation ? '정기 ' : ''}기부${isGroupDonation ? ` (${groupInfo?.name})` : ''} (커피 ${getCupCount(getCurrentAmount())}잔)`;
+        orderName = `${getSelectedFireStationName()} ${isRegularDonation ? '정기 ' : ''}기부${false ? ` (${null?.name})` : ''} (커피 ${getCupCount(getCurrentAmount())}잔)`;
       } else {
-        orderName = `${selectedFireStations.length}개 소방서 ${multipleType === 'split' ? '분할' : multipleType === 'each' ? '각각' : '개별'} ${isRegularDonation ? '정기 ' : ''}기부${isGroupDonation ? ` (${groupInfo?.name})` : ''} (총 커피 ${getCupCount(donationData.amount)}잔)`;
+        orderName = `${selectedFireStations.length}개 소방서 ${multipleType === 'split' ? '분할' : multipleType === 'each' ? '각각' : '개별'} ${isRegularDonation ? '정기 ' : ''}기부${false ? ` (${null?.name})` : ''} (총 커피 ${getCupCount(donationData.amount)}잔)`;
       }
 
       if (isRegularDonation) {
@@ -651,7 +739,7 @@ export default function DonationsPage() {
         const customerKey = `customer_${checkoutData.donation_id}`;
         await tossPayments.requestBillingAuth('카드', {
           customerKey: customerKey,
-          successUrl: `${window.location.origin}/payment/billing-success?type=regular&orderId=${orderId}&amount=${donationData.amount}&customerKey=${customerKey}`,
+          successUrl: `${window.location.origin}/payment/billing-success?type=regular&customerKey=${customerKey}`,
           failUrl: `${window.location.origin}/payment/fail`,
         });
       } else {
@@ -680,10 +768,12 @@ export default function DonationsPage() {
         orderName,
         customerName: donationData.donorName,
         customerEmail: donationData.donorEmail || 'anonymous@example.com',
-        successUrl: `${window.location.origin}/payment/success?orderId=${orderId}&amount=${donationData.amount}&station=${encodeURIComponent(selectedFireStation)}`,
+        successUrl: `${window.location.origin}/payment/success?station=${encodeURIComponent(getSelectedFireStationName())}`,
         failUrl: `${window.location.origin}/payment/fail`,
+        flowMode: 'DIRECT',  // 웹 결제창 직접 표시 (앱 연동 방지)
+        easyPay: method === '간편결제' ? '토스페이' : undefined,  // 간편결제 선택 시에만
         metadata: {
-          fireStation: selectedFireStation,
+          fireStation: getSelectedFireStationName(),
           donorName: donationData.donorName,
           message,
           needReceipt: needReceipt.toString(),
@@ -739,13 +829,6 @@ export default function DonationsPage() {
     },
   ];
 
-  const recentDonations = [
-    { donor: '김**', amount: 15000, cups: 5, time: '2분 전' },
-    { donor: '이**', amount: 30000, cups: 10, time: '5분 전' },
-    { donor: '박**', amount: 6000, cups: 2, time: '8분 전' },
-    { donor: '정**', amount: 45000, cups: 15, time: '12분 전' },
-    { donor: '한**', amount: 9000, cups: 3, time: '15분 전' },
-  ];
 
   const donationHistory = [
     {
@@ -1023,7 +1106,7 @@ export default function DonationsPage() {
                         <div className="flex items-center justify-between">
                           <div>
                             <div className="font-medium text-green-900">선택된 소방서</div>
-                            <div className="text-green-700">{selectedFireStation}</div>
+                            <div className="text-green-700">{getSelectedFireStationName()}</div>
                           </div>
                           <button
                             onClick={() => {
@@ -1042,14 +1125,22 @@ export default function DonationsPage() {
                     {/* 소방서 목록 */}
                     {showFireStationList && (
                       <div className="border border-gray-200 rounded-lg max-h-64 overflow-y-auto">
-                        {getFilteredFireStations().map((station) => {
+                        {isLoadingStations ? (
+                          <div className="p-4 text-center text-gray-500">
+                            소방서 목록을 불러오는 중...
+                          </div>
+                        ) : getFilteredFireStations().length === 0 ? (
+                          <div className="p-4 text-center text-gray-500">
+                            검색 결과가 없습니다.
+                          </div>
+                        ) : getFilteredFireStations().map((station) => {
                           const todayDispatch = Math.floor(Math.random() * 15) + 1;
                           const todayFires = Math.floor(Math.random() * 5) + 1;
                           
                           return (
                             <button
                               key={station.id}
-                              onClick={() => handleFireStationSelect(station.name)}
+                              onClick={() => handleFireStationSelect(station.id, station.name)}
                               className="w-full p-4 text-left hover:bg-gray-50 border-b border-gray-100 last:border-b-0 transition-colors duration-200"
                             >
                               <div className="flex justify-between items-center">
@@ -1370,114 +1461,6 @@ export default function DonationsPage() {
                     )}
                   </div>
 
-                  {/* 단체 기부 옵션 - 수정된 UI */}
-                  <div className="bg-blue-50 p-6 rounded-lg">
-                    <h4 className="text-lg font-semibold text-blue-900 mb-4">
-                      <i className="ri-building-line mr-2"></i>
-                      소속 단체로 기부하기
-                    </h4>
-                    
-                    {!isGroupDonation ? (
-                      <div>
-                        <p className="text-blue-700 mb-4">
-                          소속된 단체나 회사 이름으로 기부하시겠습니까?
-                        </p>
-                        <button
-                          onClick={() => setIsGroupDonation(true)}
-                          className="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors duration-200"
-                        >
-                          <i className="ri-building-line mr-2"></i>
-                          자신이 속한 소속이름으로 기부
-                        </button>
-                        <p className="text-xs text-blue-600 mt-3 text-center">
-                          단체 기부를 신청하려면{' '}
-                          <Link href="/regular-donation" className="underline font-medium hover:text-blue-800">
-                            단체 기부 페이지
-                          </Link>
-                          에서 단체 기부 이후 먼저 해주세요
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        <div>
-                          <label className="block text-sm font-medium text-blue-700 mb-2">
-                            단체 코드 입력 <span className="text-red-500">*</span>
-                          </label>
-                          <div className="flex space-x-3">
-                            <input
-                              type="text"
-                              value={groupCode}
-                              onChange={(e) => {
-                                const value = e.target.value.toUpperCase();
-                                setGroupCode(value);
-                                if (value.trim()) {
-                                  searchGroupByCode(value);
-                                } else {
-                                  setGroupInfo(null);
-                                }
-                              }}
-                              placeholder="단체에서 발급받은 코드를 입력하세요"
-                              className="flex-1 px-4 py-3 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                            <button
-                              onClick={clearGroupCode}
-                              className="px-4 py-3 text-blue-600 hover:text-blue-800 transition-colors duration-200"
-                            >
-                              <i className="ri-close-line text-xl"></i>
-                            </button>
-                          </div>
-                          
-                          {groupInfo ? (
-                            <div className="mt-3 p-3 bg-white border-2 border-blue-200 rounded-lg">
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <div className="font-semibold text-blue-900 text-lg">{groupInfo.name}</div>
-                                  <div className="text-sm text-blue-600">
-                                    단체 코드: {groupCode} • {groupInfo.type}
-                                  </div>
-                                </div>
-                                <div className="text-green-600">
-                                  <i className="ri-check-circle-fill text-xl"></i>
-                                </div>
-                              </div>
-                            </div>
-                          ) : (
-                            groupCode && (
-                              <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
-                                <div className="flex items-center space-x-2 text-red-600 text-sm">
-                                  <i className="ri-error-warning-line"></i>
-                                  <span>등록되지 않은 단체 코드입니다. 코드를 확인해주세요.</span>
-                                </div>
-                              </div>
-                            )
-                          )}
-                          
-                          <p className="text-xs text-blue-600 mt-2">
-                            예: GRP123456, COMP789012 등
-                          </p>
-                        </div>
-                        
-                        {groupInfo && (
-                          <div>
-                            <label className="block text-sm font-medium text-blue-700 mb-2">
-                              기부자 개인 이름 <span className="text-red-500">*</span>
-                            </label>
-                            <input
-                              type="text"
-                              value={donorName}
-                              onChange={(e) => setDonorName(e.target.value)}
-                              placeholder={`${groupInfo.name} 소속 기부자의 개인 이름을 입력하세요`}
-                              className="w-full px-4 py-3 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                            <p className="text-xs text-blue-600 mt-1">
-                              이 이름은 영수증 발급 및 내부 관리용으로 사용됩니다.
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
                   {/* 영수증 발급 여부 */}
                   <div className="bg-gray-50 p-4 rounded-lg">
                     <div className="flex items-start space-x-3">
@@ -1503,7 +1486,7 @@ export default function DonationsPage() {
                   </div>
 
                   {/* 계정 정보 사용 여부 (로그인한 경우만) */}
-                  {isLoggedIn && !isGroupDonation && (
+                  {isLoggedIn && !false && (
                     <div className="flex items-center space-x-3">
                       <input
                         type="checkbox"
@@ -1524,7 +1507,7 @@ export default function DonationsPage() {
                   )}
 
                   {/* 기부자명 입력 - 단체 기부가 아닌 경우에만 표시 */}
-                  {!isGroupDonation && (
+                  {!false && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         기부자명 {needReceipt && <span className="text-red-500">*</span>}
@@ -1707,28 +1690,34 @@ export default function DonationsPage() {
                 실시간 기부 현황
               </h3>
               <div className="space-y-4">
-                {recentDonations.map((donation, index) => (
-                  <div
-                    key={index}
-                    className="flex justify-between items-center p-3 bg-gray-50 rounded-lg"
-                  >
-                    <div>
-                      <div className="font-medium text-gray-900">
-                        {donation.donor}
-                      </div>
-                      <div className="text-sm text-gray-500">{donation.time}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-bold text-red-600">
-                        {donation.amount.toLocaleString()}원
-                      </div>
-                      <div className="text-sm text-gray-500 flex items-center justify-end">
-                        <i className="ri-cup-fill text-orange-500 mr-1"></i>
-                        {donation.cups}잔
-                      </div>
-                    </div>
+                {recentDonations.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    아직 기부 내역이 없습니다
                   </div>
-                ))}
+                ) : (
+                  recentDonations.map((donation, index) => (
+                    <div
+                      key={index}
+                      className="flex justify-between items-center p-3 bg-gray-50 rounded-lg"
+                    >
+                      <div>
+                        <div className="font-medium text-gray-900">
+                          {donation.donor}
+                        </div>
+                        <div className="text-sm text-gray-500">{donation.time}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-bold text-red-600">
+                          {donation.amount.toLocaleString()}원
+                        </div>
+                        <div className="text-sm text-gray-500 flex items-center justify-end">
+                          <i className="ri-cup-fill text-orange-500 mr-1"></i>
+                          {donation.cups}잔
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </Card>
 
@@ -1764,20 +1753,20 @@ export default function DonationsPage() {
               <div className="space-y-4">
                 <div className="text-center p-4 bg-white rounded-lg shadow-sm">
                   <div className="text-2xl font-bold text-red-600 mb-1">
-                    330,540,000원
+                    {donationStats.total_amount.toLocaleString()}원
                   </div>
                   <div className="text-sm text-gray-600">총 기부금액</div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="text-center p-3 bg-white rounded-lg shadow-sm">
                     <div className="text-lg font-bold text-orange-600 mb-1">
-                      110,180잔
+                      {donationStats.total_cups.toLocaleString()}잔
                     </div>
                     <div className="text-xs text-gray-600">전달된 커피</div>
                   </div>
                   <div className="text-center p-3 bg-white rounded-lg shadow-sm">
                     <div className="text-lg font-bold text-blue-600 mb-1">
-                      28,456명
+                      {donationStats.total_users.toLocaleString()}명
                     </div>
                     <div className="text-xs text-gray-600">참여 기부자</div>
                   </div>
@@ -1862,7 +1851,7 @@ export default function DonationsPage() {
                         key={station.id}
                         onClick={() => {
                           if (donationMode === 'single') {
-                            handleFireStationSelect(station.name);
+                            handleFireStationSelect(String(station.id), station.name);
                           } else {
                             setSelectedFireStations(prev => [...prev, station.name]);
                           }
@@ -2013,8 +2002,8 @@ export default function DonationsPage() {
                   <div>
                     <div className="text-sm text-gray-600">기부자명</div>
                     <div className="text-lg font-semibold text-gray-900">
-                      {isGroupDonation 
-                        ? (isAnonymous ? groupInfo?.name || '단체' : `${donorName} (${groupInfo?.name})`)
+                      {false 
+                        ? (isAnonymous ? null?.name || '단체' : `${donorName} (${null?.name})`)
                         : (isAnonymous ? '익명' : donorName || '익명')
                       }
                     </div>
@@ -2041,10 +2030,10 @@ export default function DonationsPage() {
                       {needReceipt ? '발급' : '발급 안함'}
                     </div>
                   </div>
-                  {isGroupDonation && (
+                  {false && (
                     <div>
                       <div className="text-sm text-gray-600">단체 코드</div>
-                      <div className="text-lg font-semibold text-gray-900">{groupCode}</div>
+                      <div className="text-lg font-semibold text-gray-900">{null}</div>
                     </div>
                   )}
                 </div>

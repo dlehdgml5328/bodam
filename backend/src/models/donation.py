@@ -218,6 +218,9 @@ class DonationSubscription(Base):
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     toss_customer_key: Mapped[str | None] = mapped_column(String(120))
     toss_billing_key: Mapped[str | None] = mapped_column(String(120))
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(
+        "metadata", JSON, nullable=True
+    )
 
     user = relationship("User", backref="donation_subscriptions")
     origin_donation: Mapped["Donation | None"] = relationship(

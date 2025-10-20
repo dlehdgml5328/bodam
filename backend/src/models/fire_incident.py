@@ -1,7 +1,7 @@
 """
 화재 사고 정보 모델
 """
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from sqlalchemy import (
     Column,
     String,
@@ -14,6 +14,14 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 from .base import Base
+
+# 한국 시간대 (KST = UTC+9)
+KST = timezone(timedelta(hours=9))
+
+
+def kst_now():
+    """현재 한국 시간 반환"""
+    return datetime.now(KST)
 
 
 class FireIncident(Base):
@@ -33,8 +41,8 @@ class FireIncident(Base):
     casualties_dead = Column(Integer, default=0)
     estimated_damage = Column(BigInteger, nullable=True)  # 예상 피해액 (원)
     source_url = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=kst_now)
+    updated_at = Column(DateTime(timezone=True), default=kst_now, onupdate=kst_now)
 
     # Relationships
     dispatch_events = relationship("DispatchEvent", back_populates="incident", cascade="all, delete-orphan")

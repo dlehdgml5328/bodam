@@ -130,9 +130,15 @@ services:
       # External APIs
       - NAVER_CLIENT_ID=Le3v_zRXPEpKCD8hE_ei
       - NAVER_CLIENT_SECRET=g3Gcw_ACuH
+      - NAVER_LOGIN_CLIENT_ID=Hb55laljP5_sxfrXzqEy
+      - NAVER_LOGIN_CLIENT_SECRET=QwDd8nQjOw
+      - GOOGLE_CLIENT_ID=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
+      - GOOGLE_CLIENT_SECRET=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
       - YOUTUBE_API_KEY=AIzaSyBjTLfPvieVfr2YZIHRQTfqf4eEs4joUmQ
       - TOGETHER_AI_API_KEY=bfa8dc15b9a53289883f17fb87ad2e2bb114609b35d76f45bc49643364e12056
       - TOGETHER_AI_MODEL=meta-llama/Llama-3.3-70B-Instruct-Turbo-Free
+      - TOSS_CLIENT_KEY=test_ck_oEjb0gm23PYMm6epMNvoVpGwBJn5
+      - TOSS_SECRET_KEY=test_sk_ORzdMaqN3wOaB4nZdd1b35AkYXQG
 
       # Crawler
       - CRAWLER_MOCK_SITE_URL=https://dlehdgml5328.github.io/mock-fire-station-site/
@@ -156,6 +162,7 @@ services:
         condition: service_healthy
     volumes:
       - ./backend/src:/app/src:rw
+      - ./backend/alembic:/app/alembic:rw
     networks:
       - bodam-network
 
@@ -180,7 +187,7 @@ services:
       - NAVER_CLIENT_ID=Le3v_zRXPEpKCD8hE_ei
       - NAVER_CLIENT_SECRET=g3Gcw_ACuH
       - YOUTUBE_API_KEY=AIzaSyBjTLfPvieVfr2YZIHRQTfqf4eEs4joUmQ
-      - TOGETHER_AI_API_KEY=bfa8dc15b9a53289883f17fb87ad2e2bb114609b35d76f45bc49643364e12056
+      - TOGETHER_AI_API_KEY=f888ff765f0591355600c701f75b45af3650ca5e2bd802ce4709dac031966f67
       - TOGETHER_AI_MODEL=meta-llama/Llama-3.3-70B-Instruct-Turbo-Free
       - CRAWLER_MOCK_SITE_URL=https://dlehdgml5328.github.io/mock-fire-station-site/
     depends_on:
@@ -210,7 +217,7 @@ services:
       - NAVER_CLIENT_ID=Le3v_zRXPEpKCD8hE_ei
       - NAVER_CLIENT_SECRET=g3Gcw_ACuH
       - YOUTUBE_API_KEY=AIzaSyBjTLfPvieVfr2YZIHRQTfqf4eEs4joUmQ
-      - TOGETHER_AI_API_KEY=bfa8dc15b9a53289883f17fb87ad2e2bb114609b35d76f45bc49643364e12056
+      - TOGETHER_AI_API_KEY=f888ff765f0591355600c701f75b45af3650ca5e2bd802ce4709dac031966f67
       - TOGETHER_AI_MODEL=meta-llama/Llama-3.3-70B-Instruct-Turbo-Free
     depends_on:
       - db

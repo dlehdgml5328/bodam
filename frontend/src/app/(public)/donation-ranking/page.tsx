@@ -6,8 +6,6 @@ import Card from '@/components/base/Card';
 import Button from '@/components/base/Button';
 import { apiRequest } from '@/lib/api';
 
-type RankingCategory = 'individual' | 'group' | 'company';
-
 type RankingItem = {
   rank: number;
   name: string;
@@ -17,8 +15,6 @@ type RankingItem = {
 
 type RankingsResponse = {
   individual: RankingItem[];
-  group: RankingItem[];
-  company: RankingItem[];
 };
 
 type DashboardStats = {
@@ -26,15 +22,8 @@ type DashboardStats = {
   total_cups: number;
   total_fire_stations: number;
   total_users: number;
-  total_groups: number;
-  total_companies: number;
 };
 
-const categoryLabels: Record<RankingCategory, string> = {
-  individual: '개인',
-  group: '단체',
-  company: '기업·기관',
-};
 
 const currencyFormatter = new Intl.NumberFormat('ko-KR');
 
@@ -54,7 +43,6 @@ export default function DonationRankingPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [statsError, setStatsError] = useState<string | null>(null);
-  const [activeCategory, setActiveCategory] = useState<RankingCategory>('individual');
   const [limit, setLimit] = useState(10);
 
   useEffect(() => {
@@ -125,8 +113,8 @@ export default function DonationRankingPage() {
     if (!rankings) {
       return [];
     }
-    return rankings[activeCategory] ?? [];
-  }, [activeCategory, rankings]);
+    return rankings.individual ?? [];
+  }, [rankings]);
 
   const handleDonateClick = () => {
     router.push('/donations');
@@ -139,7 +127,7 @@ export default function DonationRankingPage() {
           <div className="mb-8">
             <h1 className="mb-2 text-3xl font-bold text-gray-900">기부 랭킹</h1>
             <p className="text-lg text-gray-600">
-              실제 기부 데이터를 기반으로 개인, 단체, 기업/기관 순위를 확인하세요.
+              실제 기부 데이터를 기반으로 개인 기부 순위를 확인하세요.
             </p>
           </div>
 
@@ -179,24 +167,7 @@ export default function DonationRankingPage() {
 
           <Card className="mb-8">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
-              <div className="flex flex-wrap gap-3">
-                {(Object.keys(categoryLabels) as RankingCategory[]).map((category) => {
-                  const isActive = activeCategory === category;
-                  return (
-                    <button
-                      key={category}
-                      onClick={() => setActiveCategory(category)}
-                      className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
-                        isActive
-                          ? 'bg-red-600 text-white shadow'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      {categoryLabels[category]}
-                    </button>
-                  );
-                })}
-              </div>
+              <h2 className="text-xl font-bold text-gray-900">개인 기부 순위</h2>
               <div className="flex items-center space-x-2">
                 <span className="text-sm text-gray-600">표시할 개수</span>
                 <select
@@ -238,7 +209,7 @@ export default function DonationRankingPage() {
                     </tr>
                   ) : (
                     currentRankings.map((item) => (
-                      <tr key={`${activeCategory}-${item.rank}`} className="border-b border-gray-100 hover:bg-gray-50">
+                      <tr key={`individual-${item.rank}`} className="border-b border-gray-100 hover:bg-gray-50">
                         <td className="px-4 py-3 text-sm font-semibold text-gray-900">{item.rank}</td>
                         <td className="px-4 py-3 text-sm text-gray-700">{item.name}</td>
                         <td className="px-4 py-3 text-right text-sm font-medium text-gray-900">

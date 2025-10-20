@@ -36,6 +36,7 @@ class UserService:
         password_hash: str,
         name: str,
         phone: str | None = None,
+        id_number: str | None = None,
         role: UserRole = UserRole.DONOR,
     ) -> User:
         existing = await self._session.scalar(select(User).where(User.email == email))
@@ -47,6 +48,7 @@ class UserService:
             password_hash=password_hash,
             name=name,
             phone=phone,
+            id_number=id_number,
             role=role,
         )
         self._session.add(user)
@@ -82,6 +84,7 @@ class UserService:
         mutable_fields: Iterable[str] = {
             "name",
             "phone",
+            "id_number",
             "role",
             "tier",
             "is_active",

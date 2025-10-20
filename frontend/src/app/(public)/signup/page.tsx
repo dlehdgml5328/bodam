@@ -12,6 +12,7 @@ export default function SignupPage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [idNumber, setIdNumber] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -39,6 +40,26 @@ export default function SignupPage() {
       return;
     }
 
+    if (!phone.trim()) {
+      setErrorMessage('휴대폰 번호를 입력해주세요.');
+      return;
+    }
+
+    if (!/^01[0-9]{8,9}$/.test(phone)) {
+      setErrorMessage('휴대폰 번호 형식이 올바르지 않습니다. (예: 01012345678)');
+      return;
+    }
+
+    if (!idNumber.trim()) {
+      setErrorMessage('주민등록번호를 입력해주세요.');
+      return;
+    }
+
+    if (!/^\d{6}-?\d{7}$/.test(idNumber)) {
+      setErrorMessage('주민등록번호 형식이 올바르지 않습니다. (예: 123456-1234567)');
+      return;
+    }
+
     if (password.length < 8) {
       setErrorMessage('비밀번호는 최소 8자 이상이어야 합니다.');
       return;
@@ -60,7 +81,7 @@ export default function SignupPage() {
           message: string;
         }>('/auth/signup', {
           method: 'POST',
-          body: JSON.stringify({ name, email, password, phone: phone || undefined }),
+          body: JSON.stringify({ name, email, password, phone, id_number: idNumber }),
         });
         setSuccessMessage('회원가입이 완료되었습니다. 이메일을 확인한 뒤 로그인해주세요.');
         setTimeout(() => {
@@ -125,7 +146,7 @@ export default function SignupPage() {
 
               <div>
                 <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-2">
-                  휴대폰 번호 (선택)
+                  휴대폰 번호 <span className="text-red-500">*</span>
                 </label>
                 <input
                   id="phone"
@@ -133,8 +154,27 @@ export default function SignupPage() {
                   value={phone}
                   onChange={(event) => setPhone(event.target.value)}
                   placeholder="01012345678"
+                  required
                   className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red-500"
                 />
+                <p className="text-xs text-gray-500 mt-2">하이픈(-) 없이 숫자만 입력해주세요.</p>
+              </div>
+
+              <div>
+                <label htmlFor="idNumber" className="block text-sm font-medium text-gray-700 mb-2">
+                  주민등록번호 <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="idNumber"
+                  type="text"
+                  value={idNumber}
+                  onChange={(event) => setIdNumber(event.target.value)}
+                  placeholder="123456-1234567"
+                  required
+                  maxLength={14}
+                  className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red-500"
+                />
+                <p className="text-xs text-gray-500 mt-2">영수증 발급을 위해 필요합니다. 안전하게 보관됩니다.</p>
               </div>
 
               <div>

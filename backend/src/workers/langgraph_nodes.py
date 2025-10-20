@@ -99,6 +99,11 @@ async def search_news_node(state: MatcherState) -> MatcherState:
 async def search_videos_node(state: MatcherState) -> MatcherState:
     """
     3단계: 유튜브 영상 검색 (Tool)
+
+    YouTube API 할당량 절약:
+    - 모든 화재에 대해 영상 검색 (심각도 무관)
+    - 검색 결과 수: 2개 (할당량 절약)
+    - 검색 기간: 최근 1주일 (관련성 향상)
     """
     from datetime import datetime, timedelta
 
@@ -110,23 +115,26 @@ async def search_videos_node(state: MatcherState) -> MatcherState:
         state["video_results"] = []
         return state
 
+    severity = incident.get('severity', 'low')
     primary_keyword = keywords[0]
-    logger.info(f"[Node] Searching videos with keyword: {primary_keyword}")
+    logger.info(f"[Node] Searching videos with keyword: {primary_keyword} (severity={severity})")
 
     try:
         youtube_client = YouTubeClient(
             api_key=os.getenv('YOUTUBE_API_KEY', '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')
         )
 
-        # 최근 2주 영상만 검색
-        two_weeks_ago = (datetime.utcnow() - timedelta(days=14)).strftime('%Y-%m-%dT%H:%M:%SZ')
+        # 화재 발생일 기준으로 검색 기간 설정
+        # 오늘부터 3일 전까지의 영상 검색 (10월 17일 이후 영상만)
+        search_start = (datetime.utcnow() - timedelta(days=3)).strftime('%Y-%m-%dT%H:%M:%SZ')
+        logger.info(f"[Node] Searching videos published after: {search_start}")
 
         video_results = youtube_client.search(
             query=f"{primary_keyword} 화재",
-            max_results=5,
+            max_results=2,  # 5 → 2로 감소 (할당량 60% 절약)
             order="relevance",
             video_duration="short",
-            published_after=two_weeks_ago
+            published_after=search_start
         )
 
         logger.info(f"[Node] Found {len(video_results)} videos")

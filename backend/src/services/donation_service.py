@@ -11,6 +11,7 @@ from typing import Any, Iterable, Protocol, Sequence, runtime_checkable
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from src.models.donation import (
     AllocationType,
@@ -187,6 +188,30 @@ class DonationService:
             metadata_json=metadata,
             toss_order_id=order_id,
         )
+        # donation은 나중에 세션에 추가 (subscription FK 설정 후)
+
+        subscription: DonationSubscription | None = None
+        billing_auth_url: str | None = None
+        if regular and regular.cycle:
+            # 먼저 Subscription을 생성 (origin_donation 없이)
+            subscription = DonationSubscription(
+                user_id=user_id,
+                status=SubscriptionStatus.ACTIVE,
+                cycle=regular.cycle,
+                amount=amount,
+                currency=currency,
+                next_billing_at=_combine_date_with_utc(regular.start_date),
+                toss_customer_key=regular.customer_key,
+            )
+            self._session.add(subscription)
+            # Subscription ID를 얻기 위해 flush
+            await self._session.flush()
+
+            # FK 설정
+            donation.subscription_id = subscription.id
+            subscription.origin_donation_id = donation.id
+
+        # 이제 donation을 세션에 추가
         self._session.add(donation)
 
         if allocations:
@@ -198,22 +223,6 @@ class DonationService:
                     allocation_type=spec.allocation_type,
                 )
                 self._session.add(allocation)
-
-        subscription: DonationSubscription | None = None
-        billing_auth_url: str | None = None
-        if regular and regular.cycle:
-            subscription = DonationSubscription(
-                user_id=user_id,
-                origin_donation=donation,
-                status=SubscriptionStatus.ACTIVE,
-                cycle=regular.cycle,
-                amount=amount,
-                currency=currency,
-                next_billing_at=_combine_date_with_utc(regular.start_date),
-                toss_customer_key=regular.customer_key,
-            )
-            self._session.add(subscription)
-            donation.subscription = subscription
 
             billing_auth_url = await self._maybe_create_billing_authorization(
                 subscription=subscription,
@@ -266,7 +275,18 @@ class DonationService:
         return donation
 
     async def get_donation(self, donation_id: uuid.UUID) -> Donation:
-        donation = await self._session.get(Donation, donation_id)
+        result = await self._session.execute(
+            select(Donation)
+            .options(
+                selectinload(Donation.user),
+                selectinload(Donation.fire_station),
+                selectinload(Donation.allocations).selectinload(DonationAllocation.fire_station),
+                selectinload(Donation.group),
+                selectinload(Donation.subscription),
+            )
+            .where(Donation.id == donation_id)
+        )
+        donation = result.scalar_one_or_none()
         if donation is None:
             raise DonationNotFoundError(str(donation_id))
         return donation
@@ -276,6 +296,12 @@ class DonationService:
     ) -> list[Donation]:
         result = await self._session.execute(
             select(Donation)
+            .options(
+                selectinload(Donation.fire_station),
+                selectinload(Donation.allocations).selectinload(DonationAllocation.fire_station),
+                selectinload(Donation.group),
+                selectinload(Donation.subscription),
+            )
             .where(Donation.user_id == user_id)
             .order_by(Donation.created_at.desc())
             .offset(offset)

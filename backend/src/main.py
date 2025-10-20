@@ -17,6 +17,7 @@ from .api import (
     live,
     messages,
     news,
+    notifications,
     payments,
     rankings,
     refunds,
@@ -66,6 +67,7 @@ app.include_router(stats.router)
 app.include_router(rankings.router)
 app.include_router(news.router)
 app.include_router(messages.router)
+app.include_router(notifications.router)
 app.include_router(incidents.router)
 app.include_router(files.router)
 app.include_router(geo.router)

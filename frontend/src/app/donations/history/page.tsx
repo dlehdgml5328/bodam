@@ -165,9 +165,15 @@ export default function DonationHistoryPage() {
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-6xl mx-auto px-4">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold mb-2">기부 내역</h1>
-          <p className="text-gray-600">나의 기부 내역을 확인하세요</p>
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold mb-2">기부 내역</h1>
+            <p className="text-gray-600">나의 기부 내역을 확인하세요</p>
+          </div>
+          <Button onClick={() => router.push('/')}>
+            <i className="ri-home-line mr-2"></i>
+            홈으로
+          </Button>
         </div>
 
         {donations.length === 0 ? (
@@ -252,7 +258,10 @@ export default function DonationHistoryPage() {
                     <>
                       {donation.needs_receipt && (
                         <button
-                          onClick={() => window.open(`/api/donations/${donation.id}/receipt`, '_blank')}
+                          onClick={() => {
+                            const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+                            window.open(`${apiBaseUrl}/donations/${donation.id}/receipt`, '_blank');
+                          }}
                           className="text-sm text-blue-600 hover:underline"
                         >
                           <i className="ri-file-download-line mr-1"></i>

@@ -276,6 +276,8 @@ async def _get_video_payload(limit: int) -> list[VideoNewsResponse]:
 
             if rows:
                 video_list = []
+                seen_video_ids = set()  # 중복 제거를 위한 set
+
                 for idx, (news_match, incident) in enumerate(rows):
                     # HTML 엔티티 디코딩
                     title = html.unescape(news_match.title)
@@ -292,6 +294,12 @@ async def _get_video_payload(limit: int) -> list[VideoNewsResponse]:
                     elif "youtu.be/" in news_match.url:
                         video_id = news_match.url.split("youtu.be/")[1].split("?")[0]
 
+                    # 중복 제거: 이미 본 video_id는 스킵
+                    if video_id in seen_video_ids:
+                        logger.debug(f"[NewsAPI] Duplicate video_id: {video_id}")
+                        continue
+                    seen_video_ids.add(video_id)
+
                     # 썸네일 URL
                     thumbnail = news_match.thumbnail_url or f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"
 
@@ -300,7 +308,7 @@ async def _get_video_payload(limit: int) -> list[VideoNewsResponse]:
                     time_str = _format_datetime_obj(published_at) if published_at else ""
 
                     video_list.append(VideoNewsResponse(
-                        id=idx + 1,
+                        id=len(video_list) + 1,  # idx 대신 실제 추가된 개수 사용
                         title=title,
                         thumbnail=thumbnail,
                         duration="00:00",
@@ -354,7 +362,15 @@ async def _get_breaking_payload(limit: int) -> list[BreakingNewsResponse]:
 
             if rows:
                 news_list = []
+                seen_urls = set()  # 중복 제거를 위한 set (URL 기준)
+
                 for news_match, incident in rows:
+                    # 중복 제거: 같은 URL은 스킵
+                    if news_match.url in seen_urls:
+                        logger.debug(f"[NewsAPI] Duplicate URL: {news_match.url}")
+                        continue
+                    seen_urls.add(news_match.url)
+
                     # HTML 엔티티 디코딩
                     title = html.unescape(news_match.title)
 
@@ -376,7 +392,11 @@ async def _get_breaking_payload(limit: int) -> list[BreakingNewsResponse]:
                         link=news_match.url,
                     ))
 
-                logger.info(f"[NewsAPI] Loaded {len(news_list)} breaking news from news_matches table")
+                    # limit 개수만큼만 반환
+                    if len(news_list) >= limit:
+                        break
+
+                logger.info(f"[NewsAPI] Loaded {len(news_list)} breaking news from news_matches table (unique)")
                 return news_list
             break
     except Exception as e:

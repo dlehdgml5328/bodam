@@ -18,12 +18,12 @@ celery_app = Celery(
 
 # Celery Beat 스케줄 설정
 celery_app.conf.beat_schedule = {
-    # Mock 사이트 크롤링 (30분마다)
+    # NFDS 사이트 크롤링 (2시간마다)
     # 크롤링 → DB 저장 → 뉴스 매칭
-    # YouTube API 할당량 절약: 하루 48회 × 200 units = 9,600 units (할당량 내)
-    'crawl-mock-site-every-30min': {
-        'task': 'src.workers.crawler.crawl_mock_site',
-        'schedule': 1800.0,  # 30분 = 1800초
+    # YouTube API 할당량 절약: 하루 12회 (심각도 높은 화재만 검색)
+    'crawl-nfds-site-every-2hours': {
+        'task': 'src.workers.crawler.crawl_nfds_site',
+        'schedule': 7200.0,  # 2시간 = 7200초
     },
     # 정기결제 자동 결제 (매일 오전 2시)
     'process-recurring-donations-daily': {

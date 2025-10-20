@@ -64,6 +64,25 @@ async def _run_matcher(incident: Dict):
     incident_id = incident.get('id')
     logger.info(f"[Matcher] Starting LangGraph match for incident: {incident_id}")
 
+    # 발생 날짜 확인 (2일 이상 지난 화재는 건너뛰기 - API 할당량 절약)
+    from datetime import datetime, timedelta
+    occurrence_date = incident.get('occurrenceDate', '')
+    if occurrence_date:
+        try:
+            occurrence_dt = datetime.fromisoformat(occurrence_date)
+            days_ago = (datetime.now() - occurrence_dt).days
+            if days_ago > 2:
+                logger.info(f"[Matcher] Incident {incident_id} is {days_ago} days old, skipping (only match recent fires)")
+                return {
+                    "incident_id": incident_id,
+                    "news_count": 0,
+                    "video_count": 0,
+                    "skipped": True,
+                    "reason": "too_old"
+                }
+        except ValueError:
+            pass  # 날짜 파싱 실패 시 계속 진행
+
     # 이미 매칭된 사고인지 확인 (API 호출 절감)
     try:
         from sqlalchemy import select
@@ -81,7 +100,8 @@ async def _run_matcher(incident: Dict):
                     "incident_id": incident_id,
                     "news_count": 0,
                     "video_count": 0,
-                    "skipped": True
+                    "skipped": True,
+                    "reason": "already_matched"
                 }
             break
     except Exception as e:
@@ -129,7 +149,7 @@ async def _run_matcher(incident: Dict):
         raise
 
 
-@shared_task(queue='news_matching')
+@shared_task
 def match_news_and_videos(incident: Dict):
     """
     화재 출동 데이터에 뉴스/영상 매칭 (LangGraph)

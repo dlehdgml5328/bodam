@@ -104,6 +104,12 @@ async def _process_recurring_donations_async() -> dict[str, int]:
                     subscription.next_billing_at, subscription.cycle
                 )
 
+                # 결제 성공 시 실패 카운터 리셋
+                if subscription.metadata_json is None:
+                    subscription.metadata_json = {}
+                subscription.metadata_json["consecutive_failures"] = 0
+                subscription.metadata_json["last_success_at"] = datetime.now(timezone.utc).isoformat()
+
                 await session.commit()
                 processed += 1
 
@@ -117,6 +123,26 @@ async def _process_recurring_donations_async() -> dict[str, int]:
                 )
                 failed += 1
                 await session.rollback()
+
+                # 3회 연속 실패 시 구독 일시정지
+                if not hasattr(subscription, "metadata_json"):
+                    subscription.metadata_json = {}
+                if subscription.metadata_json is None:
+                    subscription.metadata_json = {}
+
+                fail_count = subscription.metadata_json.get("consecutive_failures", 0) + 1
+                subscription.metadata_json["consecutive_failures"] = fail_count
+                subscription.metadata_json["last_failure_at"] = datetime.now(timezone.utc).isoformat()
+                subscription.metadata_json["last_failure_reason"] = str(exc)
+
+                if fail_count >= 3:
+                    subscription.status = SubscriptionStatus.PAUSED
+                    subscription.paused_at = datetime.now(timezone.utc)
+                    logger.warning(
+                        f"Subscription {subscription.id} paused due to {fail_count} consecutive failures"
+                    )
+
+                await session.commit()
 
         await toss_client.close()
 

@@ -1,6 +1,5 @@
 import HeroSection from '@/components/home/HeroSection';
 import DashboardStats from '@/components/home/DashboardStats';
-import AdBanner from '@/components/home/AdBanner';
 import DonationRanking from '@/components/home/DonationRanking';
 import FirefighterMessages from '@/components/home/FirefighterMessages';
 import NewsSection from '@/components/home/NewsSection';
@@ -42,7 +41,6 @@ export default async function HomePage() {
     <>
       <HeroSection />
       <DashboardStats />
-      <AdBanner />
       <DonationRanking />
       <FirefighterMessages />
       <NewsSection />

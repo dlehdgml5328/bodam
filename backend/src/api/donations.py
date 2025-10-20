@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from contextlib import asynccontextmanager
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 import os
 from decimal import Decimal
 from typing import Any
@@ -157,6 +157,7 @@ class DonationResponse(BaseModel):
     message: str | None
     is_anonymous: bool
     needs_receipt: bool
+    donor_name: str | None = None
     created_at: datetime
     completed_at: datetime | None
     fire_station: FireStationSummary
@@ -241,8 +242,13 @@ async def create_donation_checkout(
             user = await user_service.get_user_by_email(donor_email)
         except UserNotFoundError:
             # 게스트 기부용 임시 사용자 생성
+            from src.security.passwords import hash_password
+            import secrets
+            # 랜덤 패스워드 생성 (게스트는 로그인 불가)
+            random_password = secrets.token_urlsafe(32)
             user = User(
                 email=donor_email,
+                password_hash=hash_password(random_password),
                 name=payload.donor.display_name or "Guest",
                 is_active=True,
             )
@@ -328,6 +334,38 @@ async def create_donation_checkout(
     )
 
 
+@router.get("/donations/recent")
+async def list_recent_donations(
+    limit: int = 10,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """공개 API: 최근 기부 내역 조회 (실시간 기부 현황용)"""
+    from sqlalchemy import select, desc
+    from sqlalchemy.orm import selectinload
+
+    # 완료된 기부만 최신순으로 조회 (eager loading 적용)
+    stmt = (
+        select(Donation)
+        .options(
+            selectinload(Donation.user),
+            selectinload(Donation.fire_station),
+            selectinload(Donation.allocations).selectinload(DonationAllocation.fire_station),
+            selectinload(Donation.group),
+            selectinload(Donation.subscription),
+        )
+        .where(Donation.status == DonationStatus.COMPLETED)
+        .order_by(desc(Donation.created_at))
+        .limit(limit)
+    )
+    result = await session.execute(stmt)
+    donations = result.scalars().all()
+
+    return {
+        "donations": [_map_donation_response(d) for d in donations],
+        "total": len(donations),
+    }
+
+
 @router.get("/donations")
 async def list_donations(
     page: int = 1,
@@ -377,8 +415,46 @@ async def get_donation(
 
 
 @router.get("/donations/{donation_id}/receipt")
-async def get_receipt(donation_id: uuid.UUID) -> Response:
-    pdf_bytes = b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n"
+async def get_receipt(
+    donation_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    """기부 영수증 PDF 다운로드"""
+    from src.services.receipt_service import ReceiptService, ReceiptData
+
+    # 기부 정보 조회
+    async with _payments_gateway() as gateway:
+        service = DonationService(session, gateway)
+        donation = await service.get_donation(donation_id)
+
+    # 영수증 발급 가능 여부 확인
+    if donation.status != DonationStatus.COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="완료된 기부만 영수증을 발급받을 수 있습니다"
+        )
+
+    # 영수증 데이터 준비
+    user = donation.user
+    fire_station = donation.fire_station
+
+    receipt_data = ReceiptData(
+        donor_name=user.name if user else "익명",
+        donor_email=user.email if user else None,
+        fire_station_name=fire_station.name,
+        fire_station_region=fire_station.region,
+        amount=float(donation.amount),
+        currency=donation.currency,
+        issue_date=donation.completed_at or donation.created_at,
+        receipt_number=str(donation.id),
+        toss_order_id=donation.toss_order_id,
+    )
+
+    # PDF 생성
+    receipt_service = ReceiptService()
+    pdf_bytes = receipt_service.render_pdf(receipt_data)
+
+    # 응답 헤더 설정
     headers = {"Content-Disposition": f"attachment; filename=receipt-{donation_id}.pdf"}
     return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
 
@@ -561,6 +637,17 @@ def _map_donation_response(donation: Donation) -> DonationResponse:
     allocations = donation.allocations or []
     group = donation.group
     subscription = donation.subscription
+
+    # 한국 시간대 (UTC+9)로 변환
+    KST = timezone(timedelta(hours=9))
+    created_at_kst = donation.created_at.replace(tzinfo=timezone.utc).astimezone(KST)
+    completed_at_kst = donation.completed_at.replace(tzinfo=timezone.utc).astimezone(KST) if donation.completed_at else None
+
+    # 기부자 이름 (user가 있으면 user.name, 없으면 None)
+    donor_name = None
+    if donation.user:
+        donor_name = donation.user.name
+
     return DonationResponse(
         id=donation.id,
         mode=donation.mode,
@@ -570,8 +657,9 @@ def _map_donation_response(donation: Donation) -> DonationResponse:
         message=donation.message,
         is_anonymous=donation.is_anonymous,
         needs_receipt=donation.needs_receipt,
-        created_at=donation.created_at,
-        completed_at=donation.completed_at,
+        donor_name=donor_name,
+        created_at=created_at_kst,
+        completed_at=completed_at_kst,
         fire_station=_map_fire_station_summary(fire_station),
         allocations=[
             DonationAllocationSummary(

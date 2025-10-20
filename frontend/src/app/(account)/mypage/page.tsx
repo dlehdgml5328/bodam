@@ -37,8 +37,10 @@ export default function MyPage() {
     nickname: '소방이',
     email: 'hong@example.com',
     phone: '010-1234-5678',
+    idNumber: '',
     newEmail: '',
     newPhone: '',
+    newIdNumber: '',
     verificationCode: '',
     isCodeSent: false,
     isVerified: false
@@ -62,17 +64,18 @@ export default function MyPage() {
   const monthlyStats = donationHistory.reduce((acc: any[], donation) => {
     const month = new Date(donation.created_at || donation.date).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long' });
     const existing = acc.find(s => s.month === month);
+    const amount = Number(donation.amount) || 0;
 
     if (existing) {
-      existing.amount += donation.amount;
+      existing.amount += amount;
       existing.count += 1;
-      existing.cups += Math.floor(donation.amount / 3000);
+      existing.cups += Math.floor(amount / 3000);
     } else {
       acc.push({
         month,
-        amount: donation.amount,
+        amount: amount,
         count: 1,
-        cups: Math.floor(donation.amount / 3000)
+        cups: Math.floor(amount / 3000)
       });
     }
 
@@ -96,10 +99,12 @@ export default function MyPage() {
     }
 
     // 사용자 타입과 단체 정보 업데이트
-    const storedUserType = localStorage.getItem('userType') || 'individual';
+    const storedUserTypeRaw = localStorage.getItem('userType');
+    const storedUserType: 'individual' | 'group' =
+      storedUserTypeRaw === 'group' ? 'group' : 'individual';
     const storedGroupNumber = localStorage.getItem('groupNumber') || '';
     const storedUserNickname = localStorage.getItem('userNickname') || '소방이';
-    
+
     setUserType(storedUserType);
     setGroupNumber(storedGroupNumber);
     
@@ -185,25 +190,28 @@ export default function MyPage() {
         const donations = await apiRequest<any>(`/donations?donor_email=${encodeURIComponent(userEmail)}`, {
           method: 'GET',
         });
-        const donationList = donations.items || [];
+        const donationList = donations.donations || [];
         setDonationHistory(donationList);
 
         // 정기 기부 가져오기
         const subscriptions = await apiRequest<any>(`/subscriptions?donor_email=${encodeURIComponent(userEmail)}`, {
           method: 'GET',
         });
-        setRegularDonations(subscriptions.items || []);
+        setRegularDonations(subscriptions.subscriptions || []);
 
         // 통계 계산
-        const totalAmount = donationList.reduce((sum: number, d: any) => sum + (d.amount || 0), 0);
+        const totalAmount = donationList.reduce((sum: number, d: any) => {
+          const amount = Number(d.amount) || 0;
+          return sum + amount;
+        }, 0);
         const totalCups = Math.floor(totalAmount / 3000);
         const totalCount = donationList.length;
 
         setUserInfo(prev => ({
           ...prev,
           totalDonations: totalAmount,
-          totalCups: totalCups,
-          totalCount: totalCount,
+          totalCups: totalCups || 0,
+          totalCount: totalCount || 0,
         }));
       } catch (error) {
         console.error('데이터 로딩 실패:', error);
@@ -219,22 +227,52 @@ export default function MyPage() {
 
   // 사용자 정보 로딩
   useEffect(() => {
-    const userNickname = localStorage.getItem('userNickname') || '소방이';
-    const userEmail = localStorage.getItem('loggedInEmail') || '';
+    const fetchUserInfo = async () => {
+      try {
+        const userData = await apiRequest<any>('/auth/me', {
+          method: 'GET',
+        });
 
-    setEditForm(prev => ({
-      ...prev,
-      name: userNickname,
-      nickname: userNickname,
-      email: userEmail,
-    }));
+        setEditForm(prev => ({
+          ...prev,
+          name: userData.name || '소방이',
+          nickname: userData.name || '소방이',
+          email: userData.email || '',
+          phone: userData.phone || '',
+          idNumber: userData.id_number || '',
+        }));
 
-    setUserInfo(prev => ({
-      ...prev,
-      name: userNickname,
-      nickname: userNickname,
-      email: userEmail,
-    }));
+        setUserInfo(prev => ({
+          ...prev,
+          name: userData.name || '소방이',
+          nickname: userData.name || '소방이',
+          email: userData.email || '',
+          phone: userData.phone || '',
+          joinDate: userData.created_at || '',
+        }));
+      } catch (error) {
+        console.error('사용자 정보 로딩 실패:', error);
+        // Fallback to localStorage
+        const userNickname = localStorage.getItem('userNickname') || '소방이';
+        const userEmail = localStorage.getItem('loggedInEmail') || '';
+
+        setEditForm(prev => ({
+          ...prev,
+          name: userNickname,
+          nickname: userNickname,
+          email: userEmail,
+        }));
+
+        setUserInfo(prev => ({
+          ...prev,
+          name: userNickname,
+          nickname: userNickname,
+          email: userEmail,
+        }));
+      }
+    };
+
+    fetchUserInfo();
   }, []);
 
 
@@ -325,26 +363,52 @@ export default function MyPage() {
   };
 
   // 정기 기부 취소 확인
-  const confirmRegularCancel = () => {
+  const confirmRegularCancel = async () => {
     if (selectedRegularDonation) {
-      // 실제로는 서버 API 호출
-      alert(`${selectedRegularDonation.fireStation}의 정기 기부가 취소되었습니다.`);
-      setShowRegularCancelModal(false);
-      setSelectedRegularDonation(null);
-      // 상태 업데이트 (실제로는 데이터 리프레시)
+      try {
+        await apiRequest(`/subscriptions/${selectedRegularDonation.id}/cancel`, {
+          method: 'POST',
+        });
+        alert(`${selectedRegularDonation.fireStation}의 정기 기부가 취소되었습니다.`);
+        setShowRegularCancelModal(false);
+        setSelectedRegularDonation(null);
+        // 데이터 리프레시
+        window.location.reload();
+      } catch (error) {
+        console.error('정기 기부 취소 실패:', error);
+        alert('정기 기부 취소 중 오류가 발생했습니다.');
+      }
     }
   };
 
   // 정기 기부 재개
-  const handleRegularResume = (regularDonation: any) => {
-    // 실제로는 서버 API 호출
-    alert(`${regularDonation.fireStation}의 정기 기부가 재개되었습니다.`);
+  const handleRegularResume = async (regularDonation: any) => {
+    try {
+      await apiRequest(`/subscriptions/${regularDonation.id}/resume`, {
+        method: 'POST',
+      });
+      alert(`${regularDonation.fireStation}의 정기 기부가 재개되었습니다.`);
+      // 데이터 리프레시
+      window.location.reload();
+    } catch (error) {
+      console.error('정기 기부 재개 실패:', error);
+      alert('정기 기부 재개 중 오류가 발생했습니다.');
+    }
   };
 
   // 정기 기부 일시정지
-  const handleRegularPause = (regularDonation: any) => {
-    // 실제로는 서버 API 호출
-    alert(`${regularDonation.fireStation}의 정기 기부가 일시정지되었습니다.`);
+  const handleRegularPause = async (regularDonation: any) => {
+    try {
+      await apiRequest(`/subscriptions/${regularDonation.id}/pause`, {
+        method: 'POST',
+      });
+      alert(`${regularDonation.fireStation}의 정기 기부가 일시정지되었습니다.`);
+      // 데이터 리프레시
+      window.location.reload();
+    } catch (error) {
+      console.error('정기 기부 일시정지 실패:', error);
+      alert('정기 기부 일시정지 중 오류가 발생했습니다.');
+    }
   };
 
 
@@ -369,13 +433,18 @@ export default function MyPage() {
         return <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">완료</span>;
       case 'pending':
         return <span className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">처리중</span>;
+      case 'refunded':
+        return <span className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded-full">환불완료</span>;
+      case 'failed':
+        return <span className="px-2 py-1 text-xs bg-gray-100 text-gray-800 rounded-full">실패</span>;
       default:
         return <span className="px-2 py-1 text-xs bg-gray-100 text-gray-800 rounded-full">알 수 없음</span>;
     }
   };
 
-  const downloadReceipt = (donationId: number) => {
-    alert(`기부 ID ${donationId}의 영수증을 다운로드합니다.`);
+  const downloadReceipt = (donationId: string) => {
+    const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+    window.open(`${apiBaseUrl}/donations/${donationId}/receipt`, '_blank');
   };
 
   const handleDonateClick = () => {
@@ -444,47 +513,64 @@ export default function MyPage() {
     }
   };
 
-  const handleProfileUpdate = () => {
-    // 이메일 변경이 있는 경우 인증 확인
-    if (editForm.newEmail && !editForm.isVerified) {
-      alert('이메일 인증을 완료해주세요.');
-      return;
+  const handleProfileUpdate = async () => {
+    try {
+      // 변경된 필드만 포함
+      const updateData: any = {};
+
+      if (editForm.name && editForm.name !== userInfo.name) {
+        updateData.name = editForm.name;
+      }
+
+      if (editForm.newPhone && editForm.newPhone !== editForm.phone) {
+        if (!/^01[0-9]{8,9}$/.test(editForm.newPhone)) {
+          alert('휴대폰 번호 형식이 올바르지 않습니다. (예: 01012345678)');
+          return;
+        }
+        updateData.phone = editForm.newPhone;
+      }
+
+      if (editForm.newIdNumber && editForm.newIdNumber !== editForm.idNumber) {
+        if (!/^\d{6}-?\d{7}$/.test(editForm.newIdNumber)) {
+          alert('주민등록번호 형식이 올바르지 않습니다. (예: 123456-1234567)');
+          return;
+        }
+        updateData.id_number = editForm.newIdNumber;
+      }
+
+      // API 호출
+      if (Object.keys(updateData).length > 0) {
+        const updatedUser = await apiRequest('/auth/me', {
+          method: 'PATCH',
+          body: JSON.stringify(updateData),
+        });
+
+        // 상태 업데이트
+        setUserInfo(prev => ({
+          ...prev,
+          name: updatedUser.name,
+          phone: updatedUser.phone,
+        }));
+
+        setEditForm(prev => ({
+          ...prev,
+          name: updatedUser.name,
+          phone: updatedUser.phone,
+          idNumber: updatedUser.id_number,
+          newPhone: '',
+          newIdNumber: '',
+        }));
+
+        alert('프로필이 성공적으로 업데이트되었습니다.');
+      } else {
+        alert('변경된 정보가 없습니다.');
+      }
+
+      setShowProfileEditModal(false);
+    } catch (error) {
+      console.error('프로필 업데이트 실패:', error);
+      alert('프로필 업데이트 중 오류가 발생했습니다.');
     }
-
-    // 프로필 이미지 업데이트
-    if (profileImagePreview) {
-      localStorage.setItem('userProfileImage', profileImagePreview);
-      setUserInfo(prev => ({ ...prev, profileImage: profileImagePreview }));
-    }
-
-    // 기타 정보 업데이트
-    const updatedUserInfo = {
-      ...userInfo,
-      name: editForm.name,
-      nickname: editForm.nickname,
-      email: editForm.newEmail || editForm.email,
-      phone: editForm.newPhone || editForm.phone,
-      profileImage: profileImagePreview || userInfo.profileImage
-    };
-    
-    setUserInfo(updatedUserInfo);
-    localStorage.setItem('userInfo', JSON.stringify(updatedUserInfo));
-    localStorage.setItem('userNickname', editForm.nickname);
-
-    // 실제 프로필 업데이트 로직
-    alert('프로필이 성공적으로 업데이트되었습니다.');
-    setShowProfileEditModal(false);
-    // 이메일 및 전화번호 변경 관련 상태 초기화
-    setEditForm(prev => ({
-      ...prev,
-      newEmail: '',
-      newPhone: '',
-      verificationCode: '',
-      isCodeSent: false,
-      isVerified: false
-    }));
-    setProfileImage(null);
-    setProfileImagePreview('');
   };
 
   const handleProfileImageChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -552,7 +638,7 @@ export default function MyPage() {
     .reduce((sum, donation) => sum + (donation?.amount || 0), 0);
 
   // 철회/반환 신청 처리 (수정)
-  const handleRefundSubmit = () => {
+  const handleRefundSubmit = async () => {
     if (selectedDonations.size === 0) {
       alert('철회/반환할 기부 내역을 선택해주세요.');
       return;
@@ -578,28 +664,40 @@ export default function MyPage() {
       .map(id => donationHistory.find(d => d.id === id))
       .filter(Boolean);
 
-    // 실제 철회/반환 신청 처리 로직
-    const refundData = {
-      userInfo: userInfo,
-      userType: userType,
-      selectedDonations: selectedDonationItems,
-      totalAmount: selectedDonationsAmount,
-      reason: refundCategory,
-      customReason: refundCategory === 'other' ? refundCustomReason : '',
-      requestDate: new Date().toISOString()
-    };
+    try {
+      // 각 선택된 기부에 대해 환불 요청
+      const refundPromises = selectedDonationItems.map(async (donation) => {
+        if (!donation) return;
 
-    console.log('철회/반환 신청 데이터:', refundData);
+        const reason = refundCategory === 'other'
+          ? refundCustomReason
+          : (userType === 'group' ? groupRefundReasons : individualRefundReasons)
+              .find(r => r.value === refundCategory)?.label || refundCategory;
 
-    setShowRefundModal(false);
-    setShowRefundCompleteModal(true);
-    
-    // 상태 초기화
-    setSelectedDonations(new Set());
-    setSelectAll(false);
-    setRefundCategory('');
-    setRefundCustomReason('');
-    setIsRefundConfirmed(false);
+        return await apiRequest(`/donations/${donation.id}/refund`, {
+          method: 'POST',
+          body: JSON.stringify({ reason })
+        });
+      });
+
+      await Promise.all(refundPromises);
+
+      setShowRefundModal(false);
+      setShowRefundCompleteModal(true);
+
+      // 상태 초기화
+      setSelectedDonations(new Set());
+      setSelectAll(false);
+      setRefundCategory('');
+      setRefundCustomReason('');
+      setIsRefundConfirmed(false);
+
+      // 기부 내역 새로고침 (실제로는 API에서 다시 불러와야 함)
+      // TODO: 기부 내역 API 재호출
+    } catch (error) {
+      console.error('환불 처리 중 오류:', error);
+      alert(error instanceof Error ? error.message : '환불 처리 중 오류가 발생했습니다.');
+    }
   };
 
   const currentDonations = donationHistory.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
@@ -767,7 +865,6 @@ export default function MyPage() {
                         <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">금액</th>
                         <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">상태</th>
                         <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">영수증</th>
-                        <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">비고</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
@@ -784,19 +881,19 @@ export default function MyPage() {
                             )}
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-900">
-                            {donation.date.toLocaleDateString('ko-KR')}
+                            {new Date(donation.created_at || donation.date).toLocaleDateString('ko-KR')}
                           </td>
                           <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                            {donation.fireStation}
+                            {donation.fire_station?.name || donation.fireStation || '알 수 없음'}
                           </td>
                           <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                            {donation.amount.toLocaleString()}원
+                            {Number(donation.amount).toLocaleString()}원
                           </td>
                           <td className="px-4 py-3">
                             {getStatusBadge(donation.status)}
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-900">
-                            {donation.receiptIssued ? (
+                            {donation.needs_receipt && donation.status === 'completed' ? (
                               <button
                                 onClick={() => downloadReceipt(donation.id)}
                                 className="text-orange-600 hover:text-orange-800 font-medium transition-colors duration-200"
@@ -804,16 +901,8 @@ export default function MyPage() {
                                 <i className="ri-download-2-line"></i> 다운로드
                               </button>
                             ) : (
-                              <span className="text-gray-400">미발급</span>
+                              <span className="text-gray-400">미신청</span>
                             )}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-right">
-                            <button
-                              onClick={() => handleDonationClick(donation)}
-                              className="text-orange-600 hover:text-orange-800 font-medium transition-colors duration-200"
-                            >
-                              <i className="ri-arrow-right-s-line"></i>
-                            </button>
                           </td>
                         </tr>
                       ))}
@@ -908,7 +997,7 @@ export default function MyPage() {
                         <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">주기</th>
                         <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">금액</th>
                         <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">상태</th>
-                        <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">비고</th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-700">관리</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
@@ -921,7 +1010,7 @@ export default function MyPage() {
                             {getCycleText(regular.cycle)}
                           </td>
                           <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                            {regular.amount.toLocaleString()}원
+                            {Number(regular.amount).toLocaleString()}원
                           </td>
                           <td className="px-4 py-3">
                             {getRegularStatusBadge(regular.status)}
@@ -1428,8 +1517,25 @@ export default function MyPage() {
                   value={editForm.newPhone || editForm.phone}
                   onChange={(e) => setEditForm(prev => ({ ...prev, newPhone: e.target.value }))}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-colors duration-200"
-                  placeholder="새 전화번호를 입력해주세요"
+                  placeholder="새 전화번호를 입력해주세요 (예: 01012345678)"
                 />
+                <p className="text-xs text-gray-500 mt-1">하이픈(-) 없이 숫자만 입력해주세요.</p>
+              </div>
+
+              {/* 주민등록번호 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  주민등록번호
+                </label>
+                <input
+                  type="text"
+                  value={editForm.newIdNumber || editForm.idNumber}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, newIdNumber: e.target.value }))}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-colors duration-200"
+                  placeholder="새 주민등록번호를 입력해주세요 (예: 123456-1234567)"
+                  maxLength={14}
+                />
+                <p className="text-xs text-gray-500 mt-1">영수증 발급을 위해 필요합니다. 안전하게 보관됩니다.</p>
               </div>
             </div>
             

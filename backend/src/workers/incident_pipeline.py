@@ -4,14 +4,17 @@
 크롤러에서 받은 데이터를:
 1. fire_incidents 테이블에 저장
 2. matcher 워커를 호출하여 뉴스 매칭 시작
+3. 신규 화재 발생 시 FCM 푸시 알림 전송
 """
 from celery import shared_task
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Any
 from sqlalchemy import select
 
 from src.database.connection import session_scope
-from src.models.fire_incident import FireIncident
+from src.models.fire_incident import FireIncident, kst_now
+from src.models.user import User
+from src.integrations.firebase_messaging import firebase_service
 from src.monitoring.logging import get_logger
 
 logger = get_logger(__name__)
@@ -48,15 +51,18 @@ def save_and_match_incident(self, incident_data: Dict[str, Any]):
             async with session_scope() as session:
                 incident_id = incident_data.get('id')
 
-                # 발생 시간 합성
+                # 발생 시간 합성 (한국 시간으로)
                 occurrence_date = incident_data.get('occurrenceDate', '')
                 occurrence_time = incident_data.get('occurrenceTime', '00:00')
                 occurred_at_str = f"{occurrence_date} {occurrence_time}:00"
 
                 try:
-                    occurred_at = datetime.fromisoformat(occurred_at_str.replace(' ', 'T'))
+                    # ISO 형식으로 파싱 후 KST 적용
+                    naive_dt = datetime.fromisoformat(occurred_at_str.replace(' ', 'T'))
+                    from src.models.fire_incident import KST
+                    occurred_at = naive_dt.replace(tzinfo=KST)
                 except ValueError:
-                    occurred_at = datetime.utcnow()
+                    occurred_at = kst_now()
 
                 # 상태 매핑
                 status_map = {
@@ -85,6 +91,8 @@ def save_and_match_incident(self, incident_data: Dict[str, Any]):
                 result = await session.execute(stmt)
                 existing = result.scalar_one_or_none()
 
+                is_new_incident = False
+
                 if existing:
                     # 업데이트
                     existing.status = status
@@ -92,7 +100,7 @@ def save_and_match_incident(self, incident_data: Dict[str, Any]):
                     existing.casualties_dead = incident_data.get('injured', 0)  # 주의: injured가 실제로는 dead일 수 있음
                     existing.estimated_damage = incident_data.get('damageAmount')
                     existing.severity = severity
-                    existing.updated_at = datetime.utcnow()
+                    existing.updated_at = kst_now()
 
                     logger.info(f"[Pipeline] Updated incident {incident_id}")
                 else:
@@ -114,9 +122,10 @@ def save_and_match_incident(self, incident_data: Dict[str, Any]):
 
                     session.add(incident)
                     logger.info(f"[Pipeline] Created incident {incident_id}")
+                    is_new_incident = True
 
                 # session_scope는 자동으로 commit하므로 제거
-                return incident_id
+                return incident_id, is_new_incident, incident_data
 
         # 기존 event loop 사용 (Celery worker의 loop)
         try:
@@ -125,18 +134,53 @@ def save_and_match_incident(self, incident_data: Dict[str, Any]):
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
-        incident_id = loop.run_until_complete(_save())
+        incident_id, is_new_incident, data = loop.run_until_complete(_save())
 
-        # 뉴스 매칭 워커 호출
+        # 신규 화재 발생 시 모든 사용자에게 푸시 알림 전송
+        if is_new_incident:
+            async def send_notifications():
+                async with session_scope() as session:
+                    # FCM 토큰이 있는 모든 사용자 조회
+                    stmt = select(User).where(User.fcm_token.isnot(None))
+                    result = await session.execute(stmt)
+                    users = result.scalars().all()
+
+                    tokens = [user.fcm_token for user in users if user.fcm_token]
+
+                    if tokens:
+                        fire_station = data.get('fireName', '').replace('소방서', '')
+                        title = "🚨 화재 발생 알림"
+                        body = f"{data.get('address', '알 수 없음')}에서 화재가 발생했습니다. {fire_station}소방서 출동 중"
+                        url = "/donations"
+
+                        # 멀티캐스트로 알림 전송
+                        success_count, failure_count = await firebase_service.send_multicast_notification(
+                            tokens=tokens,
+                            title=title,
+                            body=body,
+                            url=url,
+                            data={
+                                "incident_id": incident_id,
+                                "type": "fire_incident",
+                                "fire_station": fire_station,
+                                "address": data.get('address', '')
+                            }
+                        )
+
+                        logger.info(f"[Pipeline] Sent fire alert to {success_count} users, {failure_count} failed")
+
+            loop.run_until_complete(send_notifications())
+
+        # 뉴스 매칭 워커 호출 (Together AI Rate Limit 회피를 위해 10초 지연)
         from src.workers.matcher import match_news_and_videos
-        match_news_and_videos.delay(incident_data)
+        match_news_and_videos.apply_async((incident_data,), countdown=10, queue='news_matching')
 
-        logger.info(f"[Pipeline] Successfully saved and queued matching for {incident_id}")
+        logger.info(f"[Pipeline] Successfully saved and queued matching for {incident_id} (delayed 10s)")
 
         return {
             "status": "success",
             "incident_id": incident_id,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": kst_now().isoformat(),
         }
 
     except Exception as e:

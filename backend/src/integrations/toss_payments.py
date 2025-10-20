@@ -80,34 +80,18 @@ class TossPaymentsClient(PaymentsGateway):
         fail_url: str | None,
         metadata: dict[str, object] | None = None,
     ) -> CheckoutSession:
-        payload: dict[str, Any] = {
-            "amount": float(amount),
-            "orderId": order_id,
-            "orderName": f"Donation {order_id}",
-            "customerName": customer_name,
-            "successUrl": success_url or "https://app.bodam.example/payment/success",
-            "failUrl": fail_url or "https://app.bodam.example/payment/fail",
-        }
-        if metadata:
-            payload["metadata"] = metadata
+        # Toss Payments V1은 Frontend SDK를 통해 결제창을 띄우므로
+        # Backend에서는 order_id와 결제 정보만 반환합니다.
+        # Frontend에서 tossPayments.requestPayment()를 호출합니다.
 
-        data = await self._post("/v1/payments", payload, context="create checkout")
+        # payment_url은 Frontend에서 사용할 성공/실패 redirect URL을 반환
+        success = success_url or "http://localhost:3000/payment/success"
+        fail = fail_url or "http://localhost:3000/payment/fail"
 
-        payment_url = (
-            _dig(data, "checkout", "url")
-            or data.get("checkoutUrl")
-            or _dig(data, "links", "checkout")
-            or _dig(data, "nextAction", "url")
-        )
-        if not payment_url:
-            raise TossPaymentsError(
-                "Toss response did not include a checkout URL",
-                status_code=200,
-                response_body=data,
-            )
+        # Frontend SDK에서 사용할 정보를 URL 파라미터로 전달
+        payment_url = f"{success}?orderId={order_id}&amount={amount}"
 
-        order_id_out = data.get("orderId", order_id)
-        return CheckoutSession(order_id=order_id_out, payment_url=payment_url)
+        return CheckoutSession(order_id=order_id, payment_url=payment_url)
 
     async def confirm_payment(
         self,
@@ -156,38 +140,49 @@ class TossPaymentsClient(PaymentsGateway):
         success_url: str | None,
         fail_url: str | None,
     ) -> BillingAuthorization:
+        # Toss Payments V1은 Frontend SDK를 통해 빌링키 발급을 진행합니다.
+        # Backend에서는 customer_key와 redirect URL만 반환합니다.
+        # Frontend에서 tossPayments.requestBillingAuth()를 호출합니다.
+
         generated_customer_key = customer_key or f"customer_{uuid.uuid4()}"
-        payload = {
-            "customerKey": generated_customer_key,
-            "successUrl": success_url or "https://app.bodam.example/payment/success",
-            "failUrl": fail_url or "https://app.bodam.example/payment/fail",
-        }
-        data = await self._post(
-            "/v1/billing/authorizations/card",
-            payload,
-            context="create billing authorization",
-        )
+        success = success_url or "http://localhost:3000/payment/billing-success"
+        fail = fail_url or "http://localhost:3000/payment/billing-fail"
 
-        billing_auth_url = (
-            data.get("checkoutUrl")
-            or data.get("url")
-            or _dig(data, "links", "checkout")
-        )
-        billing_key = data.get("billingKey")
-        customer_key_out = data.get("customerKey", generated_customer_key)
-
-        if billing_auth_url is None and billing_key is None:
-            raise TossPaymentsError(
-                "Toss response missing billing authorization data",
-                status_code=200,
-                response_body=data,
-            )
+        # Frontend SDK에서 사용할 정보를 auth_url로 전달
+        billing_auth_url = f"{success}?customerKey={generated_customer_key}"
 
         return BillingAuthorization(
             billing_auth_url=billing_auth_url,
-            customer_key=customer_key_out,
-            billing_key=billing_key,
+            customer_key=generated_customer_key,
+            billing_key=None,
         )
+
+    async def get_billing_key(self, *, customer_key: str, auth_key: str) -> str:
+        """
+        Toss API로 auth_key를 이용해 실제 billing_key 조회
+
+        https://docs.tosspayments.com/reference#빌링키-발급
+        GET /v1/billing/authorizations/{authKey}
+        """
+        url = f"/v1/billing/authorizations/{auth_key}"
+        try:
+            response = await self._client.get(url)
+        except httpx.HTTPError as exc:
+            message = f"Failed to get billing key from Toss API: {exc}"
+            logger.exception(message)
+            raise TossPaymentsError(message) from exc
+
+        data = self._parse_response(response, context="get billing key")
+
+        # Toss API 응답에서 billingKey 추출
+        billing_key = data.get("billingKey")
+        if not billing_key:
+            raise TossPaymentsError(
+                "Billing key not found in Toss API response",
+                response_body=data,
+            )
+
+        return billing_key
 
     async def close(self) -> None:
         await self._client.aclose()

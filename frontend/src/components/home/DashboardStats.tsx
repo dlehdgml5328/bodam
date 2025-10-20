@@ -10,8 +10,6 @@ interface StatsData {
   total_cups: number;
   total_fire_stations: number;
   total_users: number;
-  total_groups: number;
-  total_companies: number;
 }
 
 export default function DashboardStats() {
@@ -63,20 +61,6 @@ export default function DashboardStats() {
           color: 'text-blue-600',
           bgColor: 'bg-blue-100',
         },
-        {
-          icon: 'ri-group-fill',
-          value: `${statsData.total_groups}개`,
-          label: '참여한 단체',
-          color: 'text-purple-600',
-          bgColor: 'bg-purple-100',
-        },
-        {
-          icon: 'ri-building-2-fill',
-          value: `${statsData.total_companies}개`,
-          label: '참여한 기관 및 기업',
-          color: 'text-indigo-600',
-          bgColor: 'bg-indigo-100',
-        },
       ]
     : [];
 
@@ -110,25 +94,10 @@ export default function DashboardStats() {
           </Button>
         </div>
 
-        {/* 첫 번째 줄: 총 기부금액, 총 기부된 커피, 지원한 소방서 */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-          {stats.slice(0, 3).map((stat, index) => (
+        {/* 기부 통계 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {stats.map((stat, index) => (
             <Card key={index} className="text-center hover:shadow-xl transition-shadow duration-300">
-              <div
-                className={`w-16 h-16 ${stat.bgColor} rounded-full flex items-center justify-center mx-auto mb-4`}
-              >
-                <i className={`${stat.icon} ${stat.color} text-2xl`}></i>
-              </div>
-              <div className="text-3xl font-bold text-gray-900 mb-3">{stat.value}</div>
-              <div className="text-gray-600 font-medium">{stat.label}</div>
-            </Card>
-          ))}
-        </div>
-
-        {/* 두 번째 줄: 참여한 시민, 참여한 단체, 참여한 기관 및 기업 */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {stats.slice(3, 6).map((stat, index) => (
-            <Card key={index + 3} className="text-center hover:shadow-xl transition-shadow duration-300">
               <div
                 className={`w-16 h-16 ${stat.bgColor} rounded-full flex items-center justify-center mx-auto mb-4`}
               >

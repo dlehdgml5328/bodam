@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Card from '@/components/base/Card';
 import Button from '@/components/base/Button';
@@ -8,6 +8,7 @@ import Button from '@/components/base/Button';
 export default function PaymentSuccessPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const hasConfirmed = useRef(false);  // 중복 실행 방지용 ref
 
   const [paymentInfo, setPaymentInfo] = useState({
     orderId: '',
@@ -36,7 +37,11 @@ export default function PaymentSuccessPage() {
       isConfirmed: false,
     });
 
-    confirmPayment(paymentKey, orderId, amount);
+    // useRef로 중복 실행 방지 (React Strict Mode 대응)
+    if (!hasConfirmed.current && paymentKey && orderId && amount > 0) {
+      hasConfirmed.current = true;
+      confirmPayment(paymentKey, orderId, amount);
+    }
   }, [searchParams]);
 
   useEffect(() => {
@@ -45,15 +50,55 @@ export default function PaymentSuccessPage() {
 
   const confirmPayment = async (paymentKey: string, orderId: string, amount: number) => {
     try {
-      // 실제로는 백엔드 API 호출하여 결제 승인
       console.log('결제 승인 요청:', { paymentKey, orderId, amount });
-      
-      // 임시로 성공으로 처리
+
+      // 백엔드 API 호출하여 결제 승인
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const response = await fetch(`${apiBaseUrl}/payments/confirm`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          payment_key: paymentKey,
+          order_id: orderId,
+          amount: amount,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('❌ 결제 승인 API 에러:', errorData);
+
+        // S008 에러 (이미 처리중/완료된 결제)는 성공으로 간주
+        if (errorData.detail && typeof errorData.detail === 'string' && errorData.detail.includes('S008')) {
+          console.warn('⚠️ 이미 처리된 결제입니다. 성공으로 간주합니다.');
+          setPaymentInfo(prev => ({ ...prev, isConfirmed: true }));
+          setTimeout(() => {
+            router.push('/donations/history');
+          }, 3000);
+          return;
+        }
+
+        const errorMsg = typeof errorData.detail === 'string'
+          ? errorData.detail
+          : JSON.stringify(errorData.detail || errorData);
+        throw new Error(errorMsg);
+      }
+
+      const result = await response.json();
+      console.log('✅ 결제 승인 완료:', result);
       setPaymentInfo(prev => ({ ...prev, isConfirmed: true }));
-      
+
+      // 3초 후 기부 내역 페이지로 이동
+      setTimeout(() => {
+        router.push('/donations/history');
+      }, 3000);
+
     } catch (error) {
-      console.error('결제 승인 오류:', error);
-      alert('결제 승인 중 오류가 발생했습니다.');
+      console.error('❌ 결제 승인 오류:', error);
+      alert(`결제 승인 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
+      router.push('/');
     }
   };
 
