@@ -39,20 +39,9 @@ const nextConfig = {
   
   // 🔒🔒🔒 Next.js 강제 식별자 (절대 변경 금지) 🔒🔒🔒
   experimental: {
-    appDir: true,
     forceSwcTransforms: true,
     serverComponentsExternalPackages: [],
   },
-  
-  // 🛡️🛡️🛡️ 프로젝트 타입 명시 (절대 변경 금지) 🛡️🛡️🛡️
-  projectType: 'nextjs-pages-router',
-  framework: 'nextjs',
-  frameworkLocked: true,
-  conversionBlocked: true,
-  reactRouterBlocked: true,
-  viteConversionBlocked: true,
-  autoFixDisabled: true,
-  frameworkProtectionLevel: 'MAXIMUM',
   
   // 🚫🚫🚫 자동 변환 방지 설정 (최대 보안) 🚫🚫🚫
   webpack: (config, { isServer }) => {
@@ -63,7 +52,11 @@ const nextConfig = {
       'next/head': 'next/head',
       'next/link': 'next/link',
       'next/image': 'next/image',
+      // Firebase SDK 모듈 경로를 명시적으로 고정해 빌드 시 해상도 오류 방지
     };
+    const path = require('path');
+    config.resolve.alias['firebase/app'] = path.resolve(process.cwd(), 'node_modules/firebase/app');
+    config.resolve.alias['firebase/messaging'] = path.resolve(process.cwd(), 'node_modules/firebase/messaging');
     
     // React Router 완전 차단
     config.resolve.alias['react-router-dom'] = false;
