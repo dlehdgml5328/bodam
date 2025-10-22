@@ -48,18 +48,19 @@ class SeleniumCrawlJob(Base):
     id = Column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)  # 작업 ID
     url = Column(String(2048), nullable=False, index=True)  # 크롤링 대상 URL
     browser_type = Column(  # 브라우저 타입
-        SQLEnum(BrowserType, name="browser_type_enum"),
+        String(20),
         nullable=False,
-        default=BrowserType.CHROME,
+        default=BrowserType.CHROME.value,
         server_default="chrome"
     )
     wait_conditions = Column(JSONB, nullable=True)  # 대기 조건 (JavaScript 실행 대기 등)
     retry_count = Column(Integer, nullable=False, default=0, server_default="0")  # 재시도 횟수
     max_retries = Column(Integer, nullable=False, default=3, server_default="3")  # 최대 재시도 횟수
     status = Column(  # 작업 상태
-        SQLEnum(JobStatus, name="job_status_enum"),
+        String(20),
         nullable=False,
-        default=JobStatus.PENDING
+        default=JobStatus.PENDING.value,
+        server_default=JobStatus.PENDING.value
     )
     created_at = Column(TIMESTAMP(timezone=True), nullable=False, default=datetime.utcnow)  # 생성 시간
     started_at = Column(TIMESTAMP(timezone=True), nullable=True)  # 시작 시간
@@ -101,38 +102,38 @@ class SeleniumCrawlJob(Base):
 
     def can_retry(self) -> bool:
         """작업 재시도 가능 여부 확인"""
-        return self.retry_count < self.max_retries and self.status in [
-            JobStatus.FAILED,
-            JobStatus.TIMEOUT
-        ]
+        return self.retry_count < self.max_retries and str(self.status).lower() in {
+            JobStatus.FAILED.value,
+            JobStatus.TIMEOUT.value,
+        }
 
     def mark_as_running(self) -> None:
         """작업을 실행 중으로 표시"""
-        self.status = JobStatus.RUNNING
+        self.status = JobStatus.RUNNING.value
         self.started_at = datetime.utcnow()
 
     def mark_as_completed(self) -> None:
         """작업을 완료로 표시"""
-        self.status = JobStatus.COMPLETED
+        self.status = JobStatus.COMPLETED.value
         self.completed_at = datetime.utcnow()
 
     def mark_as_failed(self, error_message: str) -> None:
         """작업을 실패로 표시"""
-        self.status = JobStatus.FAILED
+        self.status = JobStatus.FAILED.value
         self.completed_at = datetime.utcnow()
         self.error_message = error_message
         self.retry_count += 1
 
     def mark_as_timeout(self, error_message: str) -> None:
         """작업을 시간 초과로 표시"""
-        self.status = JobStatus.TIMEOUT
+        self.status = JobStatus.TIMEOUT.value
         self.completed_at = datetime.utcnow()
         self.error_message = error_message
         self.retry_count += 1
 
     def reset_for_retry(self) -> None:
         """재시도를 위해 작업 상태를 pending으로 초기화"""
-        self.status = JobStatus.PENDING
+        self.status = JobStatus.PENDING.value
         self.started_at = None
         self.completed_at = None
         self.error_message = None

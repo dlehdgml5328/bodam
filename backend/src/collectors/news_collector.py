@@ -8,6 +8,7 @@ from uuid import UUID
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from src.models.selenium_crawl_job import JobStatus, SeleniumCrawlJob
 from src.workers.selenium_crawler_worker import crawl_url
@@ -40,24 +41,48 @@ async def fetch_latest_news(limit: int = 10, db: Optional[AsyncSession] = None, 
     if use_selenium and db:
         # Create crawl jobs for dynamic news sources
         jobs = []
-        for url in DYNAMIC_NEWS_SOURCES[:limit]:
+        urls = DYNAMIC_NEWS_SOURCES[:limit]
+        created_any = False
+
+        for url in urls:
+            # Skip if there is already a pending/running job for the same URL
+            stmt = (
+                select(SeleniumCrawlJob)
+                .where(SeleniumCrawlJob.url == url)
+                .order_by(SeleniumCrawlJob.created_at.desc())
+                .limit(1)
+            )
+            result = await db.execute(stmt)
+            existing_job = result.scalar_one_or_none()
+
+            if existing_job and str(existing_job.status).lower() in {JobStatus.PENDING.value, JobStatus.RUNNING.value}:
+                jobs.append(existing_job)
+                continue
+
             job = SeleniumCrawlJob(
                 url=url,
                 wait_conditions={
                     "type": "element_present",
                     "selector": "article",
-                    "timeout_seconds": 10
+                    "timeout_seconds": 10,
                 },
-                job_metadata={"source_type": "news", "collector": "news_collector"}
+                job_metadata={"source_type": "news", "collector": "news_collector"},
             )
             db.add(job)
             jobs.append(job)
+            created_any = True
 
-        await db.commit()
+        if created_any:
+            await db.commit()
+            # Ensure we have refreshed instances before accessing relationships/ids
+            for job in jobs:
+                if job.id is None:
+                    await db.refresh(job)
 
-        # Enqueue Celery tasks for async crawling
-        for job in jobs:
-            crawl_url.delay(str(job.id))
+            # Enqueue Celery tasks only for newly created jobs (status pending)
+            for job in jobs:
+                if job.status == JobStatus.PENDING:
+                    crawl_url.delay(str(job.id))
 
         return [
             {
@@ -67,7 +92,7 @@ async def fetch_latest_news(limit: int = 10, db: Optional[AsyncSession] = None, 
                 "url": job.url,
                 "published_at": datetime.utcnow().isoformat() + "Z",
                 "crawl_job_id": str(job.id),
-                "status": job.status.value
+                "status": str(job.status),
             }
             for job in jobs
         ]

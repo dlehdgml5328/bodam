@@ -16,6 +16,11 @@ celery_app = Celery(
     backend=RESULT_BACKEND,
 )
 
+# Ensure Celery loads custom task modules explicitly (namespace package without __init__)
+celery_app.conf.imports = tuple(celery_app.conf.imports or ()) + (
+    "src.workers.selenium_crawler_worker",
+)
+
 # Celery Beat 스케줄 설정
 celery_app.conf.beat_schedule = {
     # NFDS 사이트 크롤링 (2시간마다)
@@ -24,6 +29,11 @@ celery_app.conf.beat_schedule = {
     'crawl-nfds-site-every-2hours': {
         'task': 'src.workers.crawler.crawl_nfds_site',
         'schedule': 7200.0,  # 2시간 = 7200초
+    },
+    # 동적 뉴스 소스 크롤링 (2시간마다) - Selenium 작업 생성
+    'schedule-dynamic-news-crawl': {
+        'task': 'crawler.schedule_dynamic_news',
+        'schedule': 7200.0,
     },
     # 정기결제 자동 결제 (매일 오전 2시)
     'process-recurring-donations-daily': {
@@ -40,7 +50,7 @@ celery_app.autodiscover_tasks([
 ])
 
 # 명시적으로 워커 모듈 import
-from src.workers import crawler, incident_pipeline, matcher, billing_processor
+from src.workers import crawler, incident_pipeline, matcher, billing_processor, selenium_crawler_worker
 
 
 @celery_app.task(name="worker.health_check")

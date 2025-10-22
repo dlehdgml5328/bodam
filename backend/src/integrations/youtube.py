@@ -3,6 +3,9 @@ YouTube Data API v3 클라이언트
 
 화재 출동 데이터에 매칭되는 영상 검색
 """
+import os
+import threading
+import time
 from typing import Dict, List
 
 from googleapiclient.discovery import build
@@ -11,6 +14,22 @@ from googleapiclient.errors import HttpError
 from src.monitoring.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+_THROTTLE_LOCK = threading.Lock()
+_LAST_REQUEST_TS = 0.0
+_YOUTUBE_MIN_INTERVAL = float(os.getenv("YOUTUBE_MIN_INTERVAL", "1.0"))
+_YOUTUBE_MAX_RETRIES = int(os.getenv("YOUTUBE_MAX_RETRIES", "2"))
+
+
+def _throttle_requests() -> None:
+    global _LAST_REQUEST_TS
+    with _THROTTLE_LOCK:
+        now = time.time()
+        delta = now - _LAST_REQUEST_TS
+        if delta < _YOUTUBE_MIN_INTERVAL:
+            time.sleep(_YOUTUBE_MIN_INTERVAL - delta)
+        _LAST_REQUEST_TS = time.time()
 
 
 class YouTubeClient:
@@ -45,48 +64,66 @@ class YouTubeClient:
         Returns:
             List[Dict]: 영상 검색 결과
         """
-        try:
-            search_params = {
-                "q": query,
-                "part": "snippet",
-                "type": "video",
-                "maxResults": min(max_results, 50),
-                "order": order,
-                "relevanceLanguage": "ko",
-                "videoDuration": video_duration
-            }
+        search_params = {
+            "q": query,
+            "part": "snippet",
+            "type": "video",
+            "maxResults": min(max_results, 50),
+            "order": order,
+            "relevanceLanguage": "ko",
+            "videoDuration": video_duration
+        }
 
-            if published_after:
-                search_params["publishedAfter"] = published_after
+        if published_after:
+            search_params["publishedAfter"] = published_after
 
-            request = self.youtube.search().list(**search_params)
+        tries = 0
+        while True:
+            try:
+                _throttle_requests()
+                request = self.youtube.search().list(**search_params)
+                response = request.execute()
+                items = response.get("items", [])
 
-            response = request.execute()
-            items = response.get("items", [])
+                logger.info(f"[YouTube] Found {len(items)} results for '{query}'")
 
-            logger.info(f"[YouTube] Found {len(items)} results for '{query}'")
+                return [
+                    {
+                        "id": item["id"]["videoId"],
+                        "title": item["snippet"]["title"],
+                        "url": f"https://www.youtube.com/watch?v={item['id']['videoId']}",
+                        "thumbnail": item["snippet"]["thumbnails"]["default"]["url"],
+                        "thumbnailHigh": item["snippet"]["thumbnails"].get("high", {}).get("url", ""),
+                        "description": item["snippet"]["description"],
+                        "publishedAt": item["snippet"]["publishedAt"],
+                        "channelTitle": item["snippet"]["channelTitle"]
+                    }
+                    for item in items
+                ]
 
-            return [
-                {
-                    "id": item["id"]["videoId"],
-                    "title": item["snippet"]["title"],
-                    "url": f"https://www.youtube.com/watch?v={item['id']['videoId']}",
-                    "thumbnail": item["snippet"]["thumbnails"]["default"]["url"],
-                    "thumbnailHigh": item["snippet"]["thumbnails"].get("high", {}).get("url", ""),
-                    "description": item["snippet"]["description"],
-                    "publishedAt": item["snippet"]["publishedAt"],
-                    "channelTitle": item["snippet"]["channelTitle"]
-                }
-                for item in items
-            ]
+            except HttpError as e:
+                tries += 1
+                status = getattr(e.resp, "status", None)
+                content = getattr(e, "content", b"").decode() if isinstance(getattr(e, "content", b""), bytes) else getattr(e, "content", "")
 
-        except HttpError as e:
-            logger.error(f"[YouTube] HTTP error: {e.resp.status} - {e.content}")
-            return []
+                logger.error(f"[YouTube] HTTP error: {status} - {content}")
 
-        except Exception as e:
-            logger.error(f"[YouTube] Search error: {e}", exc_info=True)
-            return []
+                if status in (403, 429) and tries <= _YOUTUBE_MAX_RETRIES:
+                    backoff = min(5.0, 2 ** (tries - 1))
+                    logger.warning(
+                        "[YouTube] Retrying after %.1fs due to rate limit (attempt %d/%d)",
+                        backoff,
+                        tries,
+                        _YOUTUBE_MAX_RETRIES,
+                    )
+                    time.sleep(backoff)
+                    continue
+
+                return []
+
+            except Exception as e:
+                logger.error(f"[YouTube] Search error: {e}", exc_info=True)
+                return []
 
     def search_news_videos(
         self,

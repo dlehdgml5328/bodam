@@ -2,19 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
-import json
+import time
 from dataclasses import dataclass
 from typing import Dict, List
 
-import httpx
+import anyio
+from together import Together
 
 from src.monitoring.logging import get_logger
 from src.services.ai_service import AnalysisResult, TogetherAIClient
-from src.monitoring.logging import get_logger
-
-logger = get_logger(__name__)
 
 logger = get_logger(__name__)
 
@@ -22,7 +21,7 @@ logger = get_logger(__name__)
 @dataclass
 class TogetherAISettings:
     api_key: str
-    model: str = "meta-llama/Meta-Llama-3.3-70B-Instruct-Turbo"
+    model: str = "meta-llama/Llama-3.3-70B-Instruct-Turbo"
     base_url: str = "https://api.together.xyz"
     temperature: float = 0.1
 
@@ -45,14 +44,28 @@ class TogetherAISettings:
         return cls(api_key=api_key, model=model, base_url=base_url, temperature=temperature)
 
 
+_RATE_LIMIT_LOCK = asyncio.Lock()
+_LAST_REQUEST_TS = 0.0
+_MIN_INTERVAL = float(os.getenv("TOGETHER_AI_MIN_INTERVAL", "0.2"))
+_MAX_RETRIES = int(os.getenv("TOGETHER_AI_MAX_RETRIES", "3"))
+
+
+async def _acquire_rate_limit() -> None:
+    """Ensure Together API requests respect the minimum interval."""
+    global _LAST_REQUEST_TS
+    async with _RATE_LIMIT_LOCK:
+        now = time.time()
+        delta = now - _LAST_REQUEST_TS
+        if delta < _MIN_INTERVAL:
+            await asyncio.sleep(_MIN_INTERVAL - delta)
+        _LAST_REQUEST_TS = time.time()
+
+
 class TogetherAIHttpClient(TogetherAIClient):
     def __init__(self, settings: TogetherAISettings | None = None) -> None:
         self._settings = settings or TogetherAISettings.from_env()
-        self._client = httpx.AsyncClient(
-            base_url=self._settings.base_url,
-            headers={"Authorization": f"Bearer {self._settings.api_key}"},
-            timeout=30,
-        )
+        os.environ.setdefault("TOGETHER_API_KEY", self._settings.api_key)
+        self._client = Together(api_key=self._settings.api_key)
 
     async def analyze_news(
         self,
@@ -95,72 +108,90 @@ class TogetherAIHttpClient(TogetherAIClient):
         # 프롬프트 생성
         prompt = self._build_evaluation_prompt(incident, news_results, video_results)
 
-        try:
-            response = await self._client.post(
-                "/v1/chat/completions",
-                json={
-                    "model": self._settings.model,
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": "당신은 화재 사고와 뉴스/영상의 관련성을 정확히 평가하는 전문가입니다. JSON 형식으로만 답변하세요."
-                        },
-                        {
-                            "role": "user",
-                            "content": prompt
-                        }
-                    ],
-                    "temperature": self._settings.temperature,
-                    "max_tokens": 2000
+        attempt = 0
+        while True:
+            try:
+                await _acquire_rate_limit()
+                result = await anyio.to_thread.run_sync(
+                    lambda: self._client.chat.completions.create(
+                        model=self._settings.model,
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": (
+                                    "당신은 화재 사고와 뉴스/영상의 관련성을 정확히 평가하는 전문가입니다. "
+                                    "JSON 형식으로만 답변하세요."
+                                ),
+                            },
+                            {"role": "user", "content": prompt},
+                        ],
+                        temperature=self._settings.temperature,
+                        max_tokens=2000,
+                    )
+                )
+
+                choice = result.choices[0]
+                message = getattr(choice, "message", None)
+                if isinstance(choice, dict):
+                    message = choice.get("message")
+
+                content = ""
+                if isinstance(message, dict):
+                    content = message.get("content", "")
+                elif message is not None:
+                    content = getattr(message, "content", "")
+
+                # JSON 추출 (마크다운 코드 블록 제거)
+                if "```json" in content:
+                    content = content.split("```json")[1].split("```")[0].strip()
+                elif "```" in content:
+                    content = content.split("```", 1)[1].split("```")[0].strip()
+
+                evaluation = json.loads(content) if content else {"news": [], "videos": []}
+
+                # 점수 기준으로 정렬 및 Top 3 선택
+                ranked_news = sorted(
+                    evaluation.get("news", []),
+                    key=lambda x: x.get("score", 0),
+                    reverse=True
+                )[:3]
+
+                ranked_videos = sorted(
+                    evaluation.get("videos", []),
+                    key=lambda x: x.get("score", 0),
+                    reverse=True
+                )[:3]
+
+                logger.info(
+                    "[TogetherAI] Evaluation complete: %d news, %d videos",
+                    len(ranked_news),
+                    len(ranked_videos),
+                )
+
+                return {
+                    "news": ranked_news,
+                    "videos": ranked_videos
                 }
-            )
 
-            response.raise_for_status()
-            result = response.json()
+            except json.JSONDecodeError as e:
+                logger.error(f"[TogetherAI] JSON parsing error: {e}")
+                raise
+            except Exception as e:
+                attempt += 1
+                message = str(e)
+                if attempt < _MAX_RETRIES and ("429" in message or "Too Many Requests" in message):
+                    backoff = min(5.0, 0.5 * attempt)
+                    logger.warning(
+                        "[TogetherAI] Rate limit encountered (attempt %d/%d). Backing off %.1fs",
+                        attempt,
+                        _MAX_RETRIES,
+                        backoff,
+                    )
+                    await asyncio.sleep(backoff)
+                    continue
 
-            # 응답 파싱
-            content = result["choices"][0]["message"]["content"]
-
-            # JSON 추출 (마크다운 코드 블록 제거)
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0].strip()
-            elif "```" in content:
-                content = content.split("```")[1].split("```")[0].strip()
-
-            evaluation = json.loads(content)
-
-            # 점수 기준으로 정렬 및 Top 3 선택
-            ranked_news = sorted(
-                evaluation.get("news", []),
-                key=lambda x: x.get("score", 0),
-                reverse=True
-            )[:3]
-
-            ranked_videos = sorted(
-                evaluation.get("videos", []),
-                key=lambda x: x.get("score", 0),
-                reverse=True
-            )[:3]
-
-            logger.info(
-                f"[TogetherAI] Evaluation complete: "
-                f"{len(ranked_news)} news, {len(ranked_videos)} videos"
-            )
-
-            return {
-                "news": ranked_news,
-                "videos": ranked_videos
-            }
-
-        except httpx.HTTPStatusError as e:
-            logger.error(f"[TogetherAI] HTTP error: {e.response.status_code} - {e.response.text}")
-            raise
-        except json.JSONDecodeError as e:
-            logger.error(f"[TogetherAI] JSON parsing error: {e}")
-            raise
-        except Exception as e:
-            logger.error(f"[TogetherAI] Unexpected error: {e}", exc_info=True)
-            raise
+                logger.error(f"[TogetherAI] Unexpected error: {e}", exc_info=True)
+                raise
 
     def _build_evaluation_prompt(
         self,
@@ -220,7 +251,9 @@ class TogetherAIHttpClient(TogetherAIClient):
 """
 
     async def close(self) -> None:
-        await self._client.aclose()
+        close_fn = getattr(self._client, "close", None)
+        if callable(close_fn):
+            await anyio.to_thread.run_sync(close_fn)
 
 
 __all__ = ["TogetherAIHttpClient", "TogetherAISettings"]

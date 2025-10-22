@@ -3,14 +3,25 @@ LangGraph 노드 정의
 
 뉴스/영상 매칭 워크플로우의 각 단계를 노드로 정의
 """
+from __future__ import annotations
+
+import copy
+import os
+import time
+from datetime import datetime, timedelta
 from typing import Dict, List, TypedDict
+
 from src.integrations.naver_news import NaverNewsClient
 from src.integrations.youtube import YouTubeClient
 from src.integrations.together_ai import TogetherAIHttpClient
 from src.monitoring.logging import get_logger
-import os
 
 logger = get_logger(__name__)
+
+_NEWS_CACHE: Dict[str, tuple[float, List[Dict]]] = {}
+_VIDEO_CACHE: Dict[str, tuple[float, List[Dict]]] = {}
+_CACHE_TTL = int(os.getenv('MATCH_CACHE_TTL_SECONDS', '1800'))
+_EVALUATION_CACHE: Dict[str, Dict] = {}
 
 
 class MatcherState(TypedDict):
@@ -69,17 +80,34 @@ async def search_news_node(state: MatcherState) -> MatcherState:
     logger.info(f"[Node] Searching news with keyword: {primary_keyword}")
 
     try:
+        now = time.time()
+        cache_entry = _NEWS_CACHE.get(primary_keyword)
+        if cache_entry and now - cache_entry[0] < _CACHE_TTL:
+            logger.info("[Node] Using cached news results for keyword '%s'", primary_keyword)
+            state["news_results"] = copy.deepcopy(cache_entry[1])
+            return state
+
+        occurrence_date = incident.get('occurrenceDate', '')
+        if occurrence_date:
+            try:
+                incident_date = datetime.strptime(occurrence_date, '%Y-%m-%d')
+                if datetime.utcnow() - incident_date > timedelta(days=5):
+                    logger.info("[Node] Incident older than 5 days, skipping news search")
+                    state["news_results"] = []
+                    return state
+            except ValueError:
+                logger.debug("[Node] Unable to parse occurrence date '%s'", occurrence_date)
+
         naver_client = NaverNewsClient(
             client_id=os.getenv('NAVER_CLIENT_ID', 'Le3v_zRXPEpKCD8hE_ei'),
             client_secret=os.getenv('NAVER_CLIENT_SECRET', 'g3Gcw_ACuH')
         )
 
-        occurrence_date = incident.get('occurrenceDate', '')
         if occurrence_date:
             news_results = await naver_client.search_with_date_filter(
                 query=primary_keyword,
                 target_date=occurrence_date,
-                days_range=3,
+                days_range=7,  # ±7일 범위로 확대 (신규 사고도 더 많이 포착)
                 display=5  # 20 → 5로 감소 (API 호출 절감)
             )
         else:
@@ -87,6 +115,7 @@ async def search_news_node(state: MatcherState) -> MatcherState:
 
         logger.info(f"[Node] Found {len(news_results)} news articles")
         state["news_results"] = news_results
+        _NEWS_CACHE[primary_keyword] = (now, copy.deepcopy(news_results))
 
     except Exception as e:
         logger.error(f"[Node] Error searching news: {e}", exc_info=True)
@@ -116,22 +145,42 @@ async def search_videos_node(state: MatcherState) -> MatcherState:
         return state
 
     severity = incident.get('severity', 'low')
+    if severity not in ('medium', 'high'):
+        logger.info("[Node] Severity=%s, skipping video search", severity)
+        state["video_results"] = []
+        return state
+
+    occurrence_date = incident.get('occurrenceDate', '')
+    if occurrence_date:
+        try:
+            if datetime.utcnow() - datetime.strptime(occurrence_date, '%Y-%m-%d') > timedelta(days=5):
+                logger.info("[Node] Incident older than 5 days, skipping video search")
+                state["video_results"] = []
+                return state
+        except ValueError:
+            logger.debug("[Node] Unable to parse occurrence date '%s'", occurrence_date)
+
     primary_keyword = keywords[0]
     logger.info(f"[Node] Searching videos with keyword: {primary_keyword} (severity={severity})")
 
     try:
+        now = time.time()
+        cache_entry = _VIDEO_CACHE.get(primary_keyword)
+        if cache_entry and now - cache_entry[0] < _CACHE_TTL:
+            logger.info("[Node] Using cached video results for keyword '%s'", primary_keyword)
+            state["video_results"] = copy.deepcopy(cache_entry[1])
+            return state
+
         youtube_client = YouTubeClient(
             api_key=os.getenv('YOUTUBE_API_KEY', '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')
         )
 
-        # 화재 발생일 기준으로 검색 기간 설정
-        # 오늘부터 3일 전까지의 영상 검색 (10월 17일 이후 영상만)
         search_start = (datetime.utcnow() - timedelta(days=3)).strftime('%Y-%m-%dT%H:%M:%SZ')
         logger.info(f"[Node] Searching videos published after: {search_start}")
 
         video_results = youtube_client.search(
             query=f"{primary_keyword} 화재",
-            max_results=2,  # 5 → 2로 감소 (할당량 60% 절약)
+            max_results=2,
             order="relevance",
             video_duration="short",
             published_after=search_start
@@ -139,6 +188,7 @@ async def search_videos_node(state: MatcherState) -> MatcherState:
 
         logger.info(f"[Node] Found {len(video_results)} videos")
         state["video_results"] = video_results
+        _VIDEO_CACHE[primary_keyword] = (now, copy.deepcopy(video_results))
 
     except Exception as e:
         logger.error(f"[Node] Error searching videos: {e}", exc_info=True)
@@ -170,6 +220,18 @@ async def evaluate_relevance_node(state: MatcherState) -> MatcherState:
         return state
 
     try:
+        incident_id = incident.get('id', '')
+        news_signature = tuple(sorted((item.get('url') or item.get('title', '')) for item in news_results))
+        video_signature = tuple(sorted((item.get('url') or item.get('title', '')) for item in video_results))
+        cache_key = f"{incident_id}:{hash(news_signature)}:{hash(video_signature)}"
+
+        cache_entry = _EVALUATION_CACHE.get(cache_key)
+        if cache_entry and time.time() - cache_entry['ts'] < _CACHE_TTL:
+            logger.info("[Node] Using cached evaluation for incident %s", incident_id)
+            state["evaluated_news"] = copy.deepcopy(cache_entry['news'])
+            state["evaluated_videos"] = copy.deepcopy(cache_entry['videos'])
+            return state
+
         together_client = TogetherAIHttpClient()
 
         evaluation = await together_client.evaluate_relevance(
@@ -218,6 +280,12 @@ async def evaluate_relevance_node(state: MatcherState) -> MatcherState:
 
         state["evaluated_news"] = final_news
         state["evaluated_videos"] = final_videos
+
+        _EVALUATION_CACHE[cache_key] = {
+            "ts": time.time(),
+            "news": copy.deepcopy(final_news),
+            "videos": copy.deepcopy(final_videos),
+        }
 
         await together_client.close()
 
