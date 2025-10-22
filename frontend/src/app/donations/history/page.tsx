@@ -34,6 +34,9 @@ interface Donation {
     cycle: string | null;
     next_billing_at: string | null;
   } | null;
+  refund_status?: 'pending' | 'approved' | 'rejected' | null;
+  refund_requested_at?: string | null;
+  refund_id?: string | null;
 }
 
 export default function DonationHistoryPage() {
@@ -79,14 +82,37 @@ export default function DonationHistoryPage() {
     void fetchDonations();
   }, [router]);
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (donation: Donation) => {
+    const refundStatus = donation.refund_status;
+    if (refundStatus === 'pending') {
+      return (
+        <span className="px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+          환불 요청 중
+        </span>
+      );
+    }
+    if (refundStatus === 'approved') {
+      return (
+        <span className="px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-800">
+          환불 승인
+        </span>
+      );
+    }
+    if (refundStatus === 'rejected') {
+      return (
+        <span className="px-2 py-1 rounded text-xs font-medium bg-orange-100 text-orange-800">
+          환불 거절
+        </span>
+      );
+    }
+
     const badges: Record<string, { color: string; text: string }> = {
       pending: { color: 'bg-yellow-100 text-yellow-800', text: '대기 중' },
       completed: { color: 'bg-green-100 text-green-800', text: '완료' },
       failed: { color: 'bg-red-100 text-red-800', text: '실패' },
       refunded: { color: 'bg-gray-100 text-gray-800', text: '환불됨' },
     };
-    const badge = badges[status] || { color: 'bg-gray-100 text-gray-800', text: status };
+    const badge = badges[donation.status] || { color: 'bg-gray-100 text-gray-800', text: donation.status };
     return (
       <span className={`px-2 py-1 rounded text-xs font-medium ${badge.color}`}>
         {badge.text}
@@ -107,11 +133,29 @@ export default function DonationHistoryPage() {
       });
 
       alert('환불 요청이 접수되었습니다.');
+      const nowIso = new Date().toISOString();
+      setDonations((prev) =>
+        prev.map((donation) =>
+          donation.id === selectedDonation.id
+            ? {
+                ...donation,
+                refund_status: 'pending',
+                refund_requested_at: nowIso,
+              }
+            : donation
+        )
+      );
+      setSelectedDonation((prev) =>
+        prev
+          ? {
+              ...prev,
+              refund_status: 'pending',
+              refund_requested_at: nowIso,
+            }
+          : prev
+      );
       setShowRefundModal(false);
       setRefundReason('');
-
-      // 목록 새로고침
-      window.location.reload();
     } catch (err: any) {
       alert(err.message || '환불 요청 중 오류가 발생했습니다.');
     }
@@ -201,7 +245,7 @@ export default function DonationHistoryPage() {
                     </p>
                   </div>
                   <div className="text-right">
-                    {getStatusBadge(donation.status)}
+                    {getStatusBadge(donation)}
                     {donation.regular && (
                       <div className="mt-2">
                         <span className="px-2 py-1 bg-purple-100 text-purple-800 rounded text-xs font-medium">
@@ -253,8 +297,29 @@ export default function DonationHistoryPage() {
                   </div>
                 )}
 
+                {donation.refund_status === 'pending' && (
+                  <div className="mb-3 p-3 bg-yellow-50 rounded text-sm text-yellow-800">
+                    <p>환불 요청이 접수되어 처리 중입니다.</p>
+                    {donation.refund_requested_at && (
+                      <p className="mt-1 text-xs">
+                        요청일: {formatDate(donation.refund_requested_at)}
+                      </p>
+                    )}
+                  </div>
+                )}
+                {donation.refund_status === 'approved' && (
+                  <div className="mb-3 p-3 bg-blue-50 rounded text-sm text-blue-800">
+                    환불이 승인되었습니다.
+                  </div>
+                )}
+                {donation.refund_status === 'rejected' && (
+                  <div className="mb-3 p-3 bg-orange-50 rounded text-sm text-orange-800">
+                    환불 요청이 거절되었습니다.
+                  </div>
+                )}
+
                 <div className="flex gap-2">
-                  {donation.status === 'completed' && (
+                  {donation.status === 'completed' && (!donation.refund_status || donation.refund_status === 'rejected') && (
                     <>
                       {donation.needs_receipt && (
                         <button

@@ -24,6 +24,7 @@ from src.models.donation import (
     SubscriptionCycle,
     SubscriptionStatus,
 )
+from src.models.refund import Refund, RefundStatus
 
 logger = logging.getLogger(__name__)
 
@@ -283,6 +284,7 @@ class DonationService:
                 selectinload(Donation.allocations).selectinload(DonationAllocation.fire_station),
                 selectinload(Donation.group),
                 selectinload(Donation.subscription),
+                selectinload(Donation.refund),
             )
             .where(Donation.id == donation_id)
         )
@@ -301,6 +303,7 @@ class DonationService:
                 selectinload(Donation.allocations).selectinload(DonationAllocation.fire_station),
                 selectinload(Donation.group),
                 selectinload(Donation.subscription),
+                selectinload(Donation.refund),
             )
             .where(Donation.user_id == user_id)
             .order_by(Donation.created_at.desc())
@@ -314,22 +317,26 @@ class DonationService:
         *,
         donation_id: uuid.UUID,
         reason: str,
-    ) -> Donation:
+    ) -> Refund:
         donation = await self.get_donation(donation_id)
         if donation.status != DonationStatus.COMPLETED:
             raise ValueError("Refunds can only be requested for completed donations")
-        if not donation.toss_payment_key:
-            raise ValueError("Donation does not have a payment key yet")
 
-        await self._payments.request_refund(
-            payment_key=donation.toss_payment_key,
-            amount=donation.amount,
-            reason=reason,
+        existing_refund = await self._session.execute(
+            select(Refund).where(Refund.donation_id == donation.id)
         )
-        donation.status = DonationStatus.REFUNDED
-        donation.refunded_at = datetime.now(timezone.utc)
+        if existing_refund.scalars().first():
+            raise ValueError("Refund request already exists for this donation")
+
+        refund = Refund(
+            donation_id=donation.id,
+            reason=reason,
+            amount=donation.amount,
+            status=RefundStatus.PENDING,
+        )
+        self._session.add(refund)
         await self._session.flush()
-        return donation
+        return refund
 
     async def list_subscriptions_for_user(
         self, user_id: uuid.UUID, *, limit: int = 20, offset: int = 0

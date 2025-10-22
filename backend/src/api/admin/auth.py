@@ -90,7 +90,7 @@ async def admin_login(
         )
 
     # 세션 쿠키 발급 (기존 보담 인증 시스템 재사용)
-    issue_session_tokens(response, user)
+    await issue_session_tokens(response, user, session)
 
     return LoginResponse(
         message="로그인 성공",

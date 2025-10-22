@@ -3,7 +3,7 @@
 import logging
 import uuid
 
-from sqladmin import ModelView
+from sqladmin import ModelView, action
 
 # from sqladmin.actions import action  # sqladmin 0.16.0에서는 actions 미지원
 from starlette.requests import Request
@@ -88,117 +88,105 @@ class RefundAdmin(ModelView, model=Refund):
         Refund.created_at: "요청일시",
     }
 
-    # @action(  # sqladmin 0.16.0에서는 actions 미지원 - API로만 사용
-    #     name="bulk_approve",
-    #     label="선택한 환불 승인",
-    #     confirmation="선택한 환불 요청을 승인하시겠습니까? (Toss Payments API 호출)",
-    #     add_in_detail=False,
-    #     add_in_list=True,
-    # )
-    async def bulk_approve_action(self, request: Request) -> RedirectResponse:
+    def _redirect_to_list(self, request: Request) -> RedirectResponse:
+        url = request.url_for("admin:list", identity=self.identity)
+        return RedirectResponse(url=url, status_code=302)
+
+    @action(
+        name="approve",
+        label="선택 환불 승인",
+        confirmation_message="선택한 환불 요청을 승인하시겠습니까?",
+    )
+    async def action_approve(self, request: Request) -> RedirectResponse:
         """
         대량 환불 승인 액션
         - 선택된 환불 요청들을 일괄 승인
         - Toss Payments API 호출하여 실제 환불 처리
         """
-        # 선택된 refund ID 추출
-        refund_ids_str = request.query_params.getlist("pks")
-        if not refund_ids_str:
-            # 선택된 항목이 없으면 목록으로 리다이렉트
-            return RedirectResponse(url=request.url_for("admin:list", identity="refund"), status_code=302)
+        raw_ids = request.query_params.getlist("pks")
+        tokenized: list[str] = []
+        for raw in raw_ids:
+            tokenized.extend([value for value in raw.split(",") if value])
 
-        try:
-            refund_ids = [uuid.UUID(rid) for rid in refund_ids_str]
+        if not tokenized:
+            return self._redirect_to_list(request)
 
-            # 임시 관리자 ID (실제로는 request에서 추출)
-            admin_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
+        refund_ids = [uuid.UUID(rid) for rid in tokenized]
+        admin_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
-            # RefundService 초기화
-            session = request.state.session  # SQLAdmin에서 제공하는 세션
+        async with self.session_maker(expire_on_commit=False) as session:  # type: ignore[attr-defined]
             payments_client = TossPaymentsClient()
             service = RefundService(session=session, payments_client=payments_client)
 
-            # 대량 승인 실행
-            result = await service.bulk_approve(
-                refund_ids=refund_ids,
-                admin_id=admin_id,
-                admin_note="SQLAdmin bulk approve action",
-            )
+            try:
+                result = await service.bulk_approve(
+                    refund_ids=refund_ids,
+                    admin_id=admin_id,
+                    admin_note="SQLAdmin bulk approve action",
+                )
 
-            # 결과 로깅
-            logger.info(
-                "Bulk approve completed: approved=%d, failed=%d",
-                result.approved,
-                len(result.failed),
-            )
+                logger.info(
+                    "Bulk approve completed: approved=%d, failed=%d",
+                    result.approved,
+                    len(result.failed),
+                )
+                await session.commit()
+            except ValueError as e:
+                logger.error("Bulk approve validation error: %s", str(e))
+                await session.rollback()
+            except Exception:  # pragma: no cover
+                logger.exception("Bulk approve unexpected error")
+                await session.rollback()
 
-            # TODO: 성공/실패 메시지를 Flash message로 표시
-            # 현재는 로그에만 기록
+        return self._redirect_to_list(request)
 
-        except ValueError as e:
-            logger.error("Bulk approve validation error: %s", str(e))
-        except Exception:
-            logger.exception("Bulk approve unexpected error")
-
-        # 목록 페이지로 리다이렉트
-        return RedirectResponse(
-            url=request.url_for("admin:list", identity="refund"),
-            status_code=302,
-        )
-
-    # @action(  # sqladmin 0.16.0에서는 actions 미지원 - API로만 사용
-    #     name="bulk_reject",
-    #     label="선택한 환불 거부",
-    #     confirmation="선택한 환불 요청을 거부하시겠습니까?",
-    #     add_in_detail=False,
-    #     add_in_list=True,
-    # )
-    async def bulk_reject_action(self, request: Request) -> RedirectResponse:
+    @action(
+        name="reject",
+        label="선택 환불 거절",
+        confirmation_message="선택한 환불 요청을 거절하시겠습니까?",
+    )
+    async def action_reject(self, request: Request) -> RedirectResponse:
         """
         대량 환불 거부 액션
         - 선택된 환불 요청들을 일괄 거부
         - Toss Payments API 호출 없음 (내부 상태만 변경)
         """
-        # 선택된 refund ID 추출
-        refund_ids_str = request.query_params.getlist("pks")
-        if not refund_ids_str:
-            return RedirectResponse(url=request.url_for("admin:list", identity="refund"), status_code=302)
+        raw_ids = request.query_params.getlist("pks")
+        tokenized: list[str] = []
+        for raw in raw_ids:
+            tokenized.extend([value for value in raw.split(",") if value])
 
-        try:
-            refund_ids = [uuid.UUID(rid) for rid in refund_ids_str]
+        if not tokenized:
+            return self._redirect_to_list(request)
 
-            # 임시 관리자 ID
-            admin_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
+        refund_ids = [uuid.UUID(rid) for rid in tokenized]
+        admin_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
-            # RefundService 초기화
-            session = request.state.session
+        async with self.session_maker(expire_on_commit=False) as session:  # type: ignore[attr-defined]
             payments_client = TossPaymentsClient()
             service = RefundService(session=session, payments_client=payments_client)
 
-            # 대량 거부 실행
-            result = await service.bulk_reject(
-                refund_ids=refund_ids,
-                admin_id=admin_id,
-                rejection_reason="SQLAdmin bulk reject action",
-            )
+            try:
+                result = await service.bulk_reject(
+                    refund_ids=refund_ids,
+                    admin_id=admin_id,
+                    rejection_reason="SQLAdmin bulk reject action",
+                )
 
-            # 결과 로깅
-            logger.info(
-                "Bulk reject completed: rejected=%d, failed=%d",
-                result.rejected,
-                len(result.failed),
-            )
+                logger.info(
+                    "Bulk reject completed: rejected=%d, failed=%d",
+                    result.rejected,
+                    len(result.failed),
+                )
+                await session.commit()
+            except ValueError as e:
+                logger.error("Bulk reject validation error: %s", str(e))
+                await session.rollback()
+            except Exception:  # pragma: no cover
+                logger.exception("Bulk reject unexpected error")
+                await session.rollback()
 
-        except ValueError as e:
-            logger.error("Bulk reject validation error: %s", str(e))
-        except Exception:
-            logger.exception("Bulk reject unexpected error")
-
-        # 목록 페이지로 리다이렉트
-        return RedirectResponse(
-            url=request.url_for("admin:list", identity="refund"),
-            status_code=302,
-        )
+        return self._redirect_to_list(request)
 
     # PENDING 상태 환불만 표시 (승인/거부 대기 중)
     def get_query(self):

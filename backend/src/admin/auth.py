@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from sqladmin.authentication import AuthenticationBackend
 from starlette.requests import Request
-from starlette.responses import RedirectResponse
+from starlette.responses import RedirectResponse, Response
 
 from src.database.connection import SessionLocal
 from src.models.user import UserRole
@@ -16,6 +16,7 @@ from src.security.passwords import verify_password
 from src.security.session import (
     SESSION_COOKIE_NAME,
     issue_session_tokens,
+    clear_session_cookies,
 )
 from src.security.tokens import TokenDecodeError, decode_access_token
 from src.services.user_service import UserNotFoundError, UserService
@@ -28,7 +29,7 @@ class AdminAuthBackend(AuthenticationBackend):
     Admin 역할을 가진 사용자만 SQLAdmin 패널에 접근할 수 있도록 제어합니다.
     """
 
-    async def login(self, request: Request) -> bool:
+    async def login(self, request: Request) -> Response:
         """로그인 요청 처리.
 
         폼 데이터에서 email과 password를 추출하여 검증하고,
@@ -45,7 +46,7 @@ class AdminAuthBackend(AuthenticationBackend):
         password = form.get("password")
 
         if not email or not password:
-            return False
+            return await self._invalid_credentials_response(request)
 
         async with SessionLocal() as session:
             user_service = UserService(session)
@@ -54,32 +55,31 @@ class AdminAuthBackend(AuthenticationBackend):
                 # 이메일로 사용자 조회
                 user = await user_service.get_user_by_email(str(email))
             except UserNotFoundError:
-                return False
+                return await self._invalid_credentials_response(request)
 
             # 비밀번호 검증
             if not verify_password(str(password), user.password_hash):
-                return False
+                return await self._invalid_credentials_response(request)
 
             # Admin 역할 확인
             if user.role != UserRole.ADMIN:
-                return False
+                return await self._invalid_credentials_response(request)
 
             # 계정 활성화 상태 확인
             if not user.is_active:
-                return False
+                return await self._invalid_credentials_response(request)
 
             # 세션 토큰 발급 (기존 보담 인증 시스템 재사용)
-            # RedirectResponse를 생성하여 쿠키 설정
-            response = RedirectResponse(url="/admin", status_code=302)
-            issue_session_tokens(response, user)
+            redirect = RedirectResponse(url=request.url_for("admin:index"), status_code=302)
+            tokens = await issue_session_tokens(redirect, user, session)
 
-            # 요청의 세션에 response의 쿠키를 복사
-            # (SQLAdmin의 login 메서드는 bool만 반환하므로 쿠키를 직접 설정해야 함)
-            request.session.update({"token": response.cookies.get(SESSION_COOKIE_NAME)})
+            if tokens and tokens.get("access_token"):
+                request.session[SESSION_COOKIE_NAME] = tokens["access_token"]
+                request.session["token"] = tokens["access_token"]
 
-            return True
+            return redirect
 
-    async def logout(self, request: Request) -> bool:
+    async def logout(self, request: Request) -> Response:
         """로그아웃 요청 처리.
 
         세션 쿠키를 삭제하여 로그아웃합니다.
@@ -90,9 +90,10 @@ class AdminAuthBackend(AuthenticationBackend):
         Returns:
             로그아웃 성공 여부 (항상 True)
         """
-        # 세션 데이터 클리어
+        redirect = RedirectResponse(url=request.url_for("admin:login"), status_code=302)
+        clear_session_cookies(redirect)
         request.session.clear()
-        return True
+        return redirect
 
     async def authenticate(self, request: Request) -> bool:
         """요청 인증 확인.
@@ -142,6 +143,9 @@ class AdminAuthBackend(AuthenticationBackend):
                 return False
 
             return True
+
+    async def _invalid_credentials_response(self, request: Request) -> Response:
+        return RedirectResponse(url=request.url_for("admin:login"), status_code=302)
 
 
 __all__ = ["AdminAuthBackend"]

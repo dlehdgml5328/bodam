@@ -19,12 +19,14 @@ from src.integrations.toss_payments import TossPaymentsClient
 from src.models.donation import (
     AllocationType,
     Donation,
+    DonationAllocation,
     DonationMode,
     DonationStatus,
     DonationSubscription,
     SubscriptionCycle,
     SubscriptionStatus,
 )
+from src.models.refund import RefundStatus
 from src.models.user import User
 from src.security.session import get_current_user_from_bearer, get_current_user_with_csrf, get_optional_user_from_bearer
 from src.services.donation_service import (
@@ -165,6 +167,9 @@ class DonationResponse(BaseModel):
     group: GroupDonationSummary | None
     regular: RegularDonationSummary | None
     payment: DonationPaymentInfo
+    refund_status: RefundStatus | None = None
+    refund_requested_at: datetime | None = None
+    refund_id: uuid.UUID | None = None
 
 
 class DonationDetailResponse(DonationResponse):
@@ -352,6 +357,7 @@ async def list_recent_donations(
             selectinload(Donation.allocations).selectinload(DonationAllocation.fire_station),
             selectinload(Donation.group),
             selectinload(Donation.subscription),
+            selectinload(Donation.refund),
         )
         .where(Donation.status == DonationStatus.COMPLETED)
         .order_by(desc(Donation.created_at))
@@ -474,18 +480,15 @@ async def request_refund(
     async with _payments_gateway() as gateway:
         service = DonationService(session, gateway)
         try:
-            # 기부 조회
             donation = await service.get_donation(donation_id)
 
-            # 권한 확인 (본인의 기부인지)
             if donation.user_id != current_user.id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="본인의 기부만 환불 요청할 수 있습니다."
                 )
 
-            # 환불 처리
-            refunded_donation = await service.request_refund(
+            refund = await service.request_refund(
                 donation_id=donation_id,
                 reason=payload.reason,
             )
@@ -493,10 +496,11 @@ async def request_refund(
             await session.commit()
 
             return {
-                "donation_id": str(refunded_donation.id),
-                "status": "refunded",
-                "message": "환불이 완료되었습니다",
-                "refunded_at": refunded_donation.refunded_at.isoformat() if refunded_donation.refunded_at else None,
+                "refund_id": str(refund.id),
+                "donation_id": str(refund.donation_id),
+                "status": refund.status.value,
+                "message": "환불 요청이 접수되었습니다",
+                "created_at": refund.created_at.isoformat() if refund.created_at else None,
             }
 
         except ValueError as exc:
@@ -637,6 +641,7 @@ def _map_donation_response(donation: Donation) -> DonationResponse:
     allocations = donation.allocations or []
     group = donation.group
     subscription = donation.subscription
+    refund = getattr(donation, "refund", None)
 
     # 한국 시간대 (UTC+9)로 변환
     KST = timezone(timedelta(hours=9))
@@ -694,6 +699,9 @@ def _map_donation_response(donation: Donation) -> DonationResponse:
             toss_order_id=donation.toss_order_id,
             toss_payment_key=donation.toss_payment_key,
         ),
+        refund_status=refund.status if refund else None,
+        refund_requested_at=refund.created_at if refund else None,
+        refund_id=refund.id if refund else None,
     )
 
 

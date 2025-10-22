@@ -427,8 +427,42 @@ export default function MyPage() {
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
+  const getDonationDate = (donation: any) => {
+    if (!donation) return null;
+    const raw = donation.created_at || donation.date;
+    if (!raw) return null;
+    const date = raw instanceof Date ? raw : new Date(raw);
+    return Number.isNaN(date.getTime()) ? null : date;
+  };
+
+  const getStatusBadge = (donation: any) => {
+    const refundStatus = donation.refund_status;
+
+    if (refundStatus === 'pending') {
+      return (
+        <span className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">
+          환불 요청 중
+        </span>
+      );
+    }
+
+    if (refundStatus === 'approved') {
+      return (
+        <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+          환불 승인
+        </span>
+      );
+    }
+
+    if (refundStatus === 'rejected') {
+      return (
+        <span className="px-2 py-1 text-xs bg-orange-100 text-orange-800 rounded-full">
+          환불 거절
+        </span>
+      );
+    }
+
+    switch (donation.status) {
       case 'completed':
         return <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">완료</span>;
       case 'pending':
@@ -627,15 +661,17 @@ export default function MyPage() {
   };
 
   // 선택 가능한 기부 내역 (완료되고 영수증 미발급된 것만)
-  const selectableDonations = donationHistory.filter(donation => 
-    donation.status === 'completed' && !donation.receiptIssued
+  const selectableDonations = donationHistory.filter((donation) =>
+    donation.status === 'completed'
+    && !donation.receiptIssued
+    && (!donation.refund_status || donation.refund_status === 'rejected')
   );
 
   // 선택된 기부 내역의 총액 계산
   const selectedDonationsAmount = Array.from(selectedDonations)
-    .map(id => donationHistory.find(d => d.id === id))
+    .map((id) => donationHistory.find((d) => d.id === id))
     .filter(Boolean)
-    .reduce((sum, donation) => sum + (donation?.amount || 0), 0);
+    .reduce((sum, donation) => sum + Number(donation?.amount || 0), 0);
 
   // 철회/반환 신청 처리 (수정)
   const handleRefundSubmit = async () => {
@@ -663,6 +699,7 @@ export default function MyPage() {
     const selectedDonationItems = Array.from(selectedDonations)
       .map(id => donationHistory.find(d => d.id === id))
       .filter(Boolean);
+    const selectedIds = selectedDonationItems.map((donation) => donation!.id);
 
     try {
       // 각 선택된 기부에 대해 환불 요청
@@ -681,6 +718,17 @@ export default function MyPage() {
       });
 
       await Promise.all(refundPromises);
+
+      const nowIso = new Date().toISOString();
+      setDonationHistory(prev => prev.map(donation => (
+        selectedIds.includes(donation.id)
+          ? {
+              ...donation,
+              refund_status: 'pending',
+              refund_requested_at: nowIso,
+            }
+          : donation
+      )));
 
       setShowRefundModal(false);
       setShowRefundCompleteModal(true);
@@ -871,7 +919,7 @@ export default function MyPage() {
                       {currentDonations.map(donation => (
                         <tr key={donation.id} className="hover:bg-gray-50 transition-colors duration-150">
                           <td className="px-4 py-3">
-                            {donation.status === 'completed' && !donation.receiptIssued && (
+                            {donation.status === 'completed' && !donation.receiptIssued && (!donation.refund_status || donation.refund_status === 'rejected') && (
                               <input
                                 type="checkbox"
                                 checked={selectedDonations.has(donation.id)}
@@ -881,7 +929,10 @@ export default function MyPage() {
                             )}
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-900">
-                            {new Date(donation.created_at || donation.date).toLocaleDateString('ko-KR')}
+                            {(() => {
+                              const date = getDonationDate(donation);
+                              return date ? date.toLocaleDateString('ko-KR') : '날짜 미확인';
+                            })()}
                           </td>
                           <td className="px-4 py-3 text-sm font-medium text-gray-900">
                             {donation.fire_station?.name || donation.fireStation || '알 수 없음'}
@@ -890,7 +941,7 @@ export default function MyPage() {
                             {Number(donation.amount).toLocaleString()}원
                           </td>
                           <td className="px-4 py-3">
-                            {getStatusBadge(donation.status)}
+                    {getStatusBadge(donation)}
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-900">
                             {donation.needs_receipt && donation.status === 'completed' ? (
@@ -1578,7 +1629,10 @@ export default function MyPage() {
                   기부 날짜
                 </label>
                 <div className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg text-gray-900">
-                  {selectedDonation.date.toLocaleDateString('ko-KR')}
+                  {(() => {
+                    const date = getDonationDate(selectedDonation);
+                    return date ? date.toLocaleDateString('ko-KR') : '날짜 미확인';
+                  })()}
                 </div>
               </div>
               
@@ -1641,9 +1695,30 @@ export default function MyPage() {
                   상태
                 </label>
                 <div className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg">
-                  {getStatusBadge(selectedDonation.status)}
+                  {getStatusBadge(selectedDonation)}
                 </div>
               </div>
+              
+              {selectedDonation.refund_status === 'pending' && (
+                <div className="p-3 bg-yellow-50 border border-yellow-100 rounded text-sm text-yellow-800">
+                  <p>환불 요청이 접수되어 처리 중입니다.</p>
+                  {selectedDonation.refund_requested_at && (
+                    <p className="mt-1 text-xs">
+                      요청일: {new Date(selectedDonation.refund_requested_at).toLocaleString('ko-KR')}
+                    </p>
+                  )}
+                </div>
+              )}
+              {selectedDonation.refund_status === 'approved' && (
+                <div className="p-3 bg-blue-50 border border-blue-100 rounded text-sm text-blue-800">
+                  환불이 승인되었습니다.
+                </div>
+              )}
+              {selectedDonation.refund_status === 'rejected' && (
+                <div className="p-3 bg-orange-50 border border-orange-100 rounded text-sm text-orange-800">
+                  환불 요청이 거절되었습니다.
+                </div>
+              )}
               
               {selectedDonation.status === 'completed' && (
                 <div>
@@ -1710,18 +1785,36 @@ export default function MyPage() {
               <div>
                 <h4 className="font-semibold text-gray-900 mb-3">선택된 기부 내역</h4>
                 <div className="space-y-2 max-h-40 overflow-y-auto">
-                  {Array.from(selectedDonations).map(id => {
-                    const donation = donationHistory.find(d => d.id === id);
-                    return donation ? (
-                      <div 
-                        key={id} 
+                  {Array.from(selectedDonations).map((id) => {
+                    const donation = donationHistory.find((d) => d.id === id);
+                    if (!donation) {
+                      return null;
+                    }
+
+                    const donationDate = donation.created_at
+                      ? new Date(donation.created_at)
+                      : donation.date
+                      ? new Date(donation.date)
+                      : null;
+                    const fireStationName =
+                      donation.fire_station?.name || donation.fireStation || '알 수 없음';
+                    const amountValue =
+                      typeof donation.amount === 'number'
+                        ? donation.amount
+                        : Number(donation.amount || 0);
+
+                    return (
+                      <div
+                        key={id}
                         className="px-4 py-2 bg-gray-50 border border-gray-200 rounded text-sm text-gray-700"
                       >
-                        <span className="font-medium">{donation.date.toLocaleDateString('ko-KR')}</span> - 
-                        <span className="mx-2">{donation.fireStation}</span> - 
-                        <span>{donation.amount.toLocaleString()}원</span>
+                        <span className="font-medium">
+                          {donationDate ? donationDate.toLocaleDateString('ko-KR') : '날짜 미확인'}
+                        </span>{' '}
+                        - <span className="mx-2">{fireStationName}</span> -{' '}
+                        <span>{amountValue.toLocaleString()}원</span>
                       </div>
-                    ) : null;
+                    );
                   })}
                 </div>
                 

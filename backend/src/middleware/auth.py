@@ -25,6 +25,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
         request.state.token = token
         logger.debug("Auth token resolved: %s", "set" if token else "missing")
         response = await call_next(request)
+
+        extra_cookies = getattr(request.state, "auth_cookies", None)
+        if extra_cookies:
+            for cookie in extra_cookies:
+                response.headers.append("set-cookie", cookie)
+
         return response
 
 

@@ -10,7 +10,7 @@ from decimal import Decimal
 from sqlalchemy import DateTime, ForeignKey, Numeric, Text, func
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
 
@@ -46,6 +46,8 @@ class Refund(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+    donation = relationship("Donation", back_populates="refund")
 
 
 __all__ = ["Refund", "RefundStatus"]

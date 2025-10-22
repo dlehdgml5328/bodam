@@ -1,7 +1,7 @@
 import os
-from dotenv import load_dotenv
 
 from celery import Celery
+from celery.schedules import crontab
 from dotenv import load_dotenv
 
 # .env 파일 로드

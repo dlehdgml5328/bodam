@@ -16,6 +16,7 @@ if sys.platform != "win32":  # Windows는 uvloop 미지원
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
+from sqladmin import Admin
 
 from .api import (
     auth,
@@ -38,13 +39,23 @@ from .api import (
     stats,
     webpush,
 )
+from .api.admin import (
+    auth as admin_auth,
+    chat as admin_chat,
+    refund_actions as admin_refund_actions,
+    refunds as admin_refunds,
+    resources as admin_resources,
+    search as admin_search,
+)
 from .api.crawler import routes as crawler
-from .api.admin import refunds as admin_refunds, resources as admin_resources, search as admin_search
+from .admin import register_admin_views
+from .admin.auth import AdminAuthBackend
+from .admin.config import AdminConfig
 from .api.webhooks import toss
 from .database.connection import engine
 from .middleware.auth import AuthMiddleware
 from .middleware.rate_limiter import RateLimitMiddleware
-from .config.security import get_security_settings
+from .security_config import get_security_settings
 import os
 
 # orjson을 기본 JSON 응답 클래스로 설정 (JSON 직렬화 성능 향상)

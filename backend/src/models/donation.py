@@ -6,7 +6,7 @@ import enum
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
     JSON,
@@ -24,6 +24,9 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
+
+if TYPE_CHECKING:
+    from .refund import Refund
 
 
 class DonationType(str, enum.Enum):
@@ -142,6 +145,12 @@ class Donation(Base):
         back_populates="origin_donation",
         foreign_keys=[subscription_id],
         uselist=False,
+    )
+    refund: Mapped["Refund | None"] = relationship(
+        "Refund",
+        back_populates="donation",
+        uselist=False,
+        cascade="all, delete-orphan",
     )
 
     def __repr__(self) -> str:
