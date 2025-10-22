@@ -7,14 +7,13 @@ from __future__ import annotations
 
 import logging
 from uuid import UUID
-from datetime import datetime
 
-from src.worker import celery_app
 from src.database import SessionLocal
-from src.models.selenium_crawl_job import SeleniumCrawlJob, JobStatus
 from src.models.crawled_content import CrawledContent
-from src.services.crawler.selenium_crawler import SeleniumCrawler
+from src.models.selenium_crawl_job import SeleniumCrawlJob
 from src.services.crawler.content_extractor import ContentExtractor
+from src.services.crawler.selenium_crawler import SeleniumCrawler
+from src.worker import celery_app
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +89,7 @@ def crawl_url(self, job_id: str):
             # Retry if retries remaining
             if job.can_retry():
                 logger.info(f"Retrying job {job_id} (attempt {job.retry_count + 1})")
-                raise self.retry(exc=e, countdown=60)  # Retry after 60 seconds
+                raise self.retry(exc=e, countdown=60) from None  # Retry after 60 seconds
 
         raise
 

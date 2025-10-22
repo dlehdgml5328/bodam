@@ -7,7 +7,7 @@ from typing import Any
 
 from jose import JWTError, jwt
 
-from src.config.security import get_security_settings
+from src.security_config import get_security_settings
 
 
 class TokenDecodeError(Exception):

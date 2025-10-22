@@ -4,6 +4,8 @@
 크롤링된 화재 출동 데이터를 기반으로
 네이버 뉴스와 YouTube 영상을 검색하여 Llama 3.3으로 관련성 평가
 """
+from typing import Dict
+
 from celery import shared_task
 from typing import Dict
 from datetime import datetime

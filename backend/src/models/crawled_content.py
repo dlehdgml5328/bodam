@@ -6,11 +6,12 @@ Stores extracted content from Selenium crawl jobs.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Dict, Any
-from uuid import UUID, uuid4
+from typing import Any, Dict
+from uuid import uuid4
 
-from sqlalchemy import Column, String, Text, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID as PGUUID, JSONB, TIMESTAMP
+from sqlalchemy import Column, ForeignKey, String, Text
+from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import relationship
 
 from src.models.base import Base

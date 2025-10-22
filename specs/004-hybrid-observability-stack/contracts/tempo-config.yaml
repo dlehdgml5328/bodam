@@ -1,0 +1,223 @@
+# Tempo Configuration Contract
+# Purpose: Define distributed tracing storage and OpenTelemetry integration
+# Reference: research.md Section 4 (Tempo + OpenTelemetry)
+
+server:
+  http_listen_port: 3200
+  log_level: info
+
+# Distributor configuration (receives traces)
+distributor:
+  receivers:
+    # OTLP gRPC receiver (primary)
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+    # Jaeger receiver (for compatibility)
+    jaeger:
+      protocols:
+        thrift_http:
+          endpoint: 0.0.0.0:14268
+        grpc:
+          endpoint: 0.0.0.0:14250
+    # Zipkin receiver (for compatibility)
+    zipkin:
+      endpoint: 0.0.0.0:9411
+
+# Ingester configuration
+ingester:
+  lifecycler:
+    address: 127.0.0.1
+    ring:
+      kvstore:
+        store: inmemory
+      replication_factor: 1
+    final_sleep: 0s
+  trace_idle_period: 10s
+  max_block_bytes: 1_000_000
+  max_block_duration: 5m
+
+# Compactor configuration (for retention)
+compactor:
+  compaction:
+    block_retention: 48h  # 2 days local retention
+  ring:
+    kvstore:
+      store: inmemory
+
+# Storage configuration (local filesystem)
+storage:
+  trace:
+    backend: local
+    local:
+      path: /tempo/traces
+    wal:
+      path: /tempo/wal
+    pool:
+      max_workers: 100
+      queue_depth: 10000
+
+# Query frontend configuration
+query_frontend:
+  search:
+    max_duration: 0s  # Unlimited search duration
+  trace_by_id:
+    query_timeout: 30s
+
+# Metrics generator (converts spans to metrics)
+metrics_generator:
+  registry:
+    external_labels:
+      source: tempo
+      cluster: bodam-doks
+  storage:
+    path: /tempo/generator/wal
+    remote_write:
+      # Write span metrics to Prometheus
+      - url: http://prometheus:9090/api/v1/write
+        send_exemplars: true
+  # Generate RED metrics from traces
+  processor:
+    service_graphs:
+      dimensions:
+        - http.method
+        - http.status_code
+      histogram_buckets: [0.1, 0.2, 0.4, 0.8, 1.6, 3.2, 6.4, 12.8]
+    span_metrics:
+      dimensions:
+        - http.method
+        - http.status_code
+        - service.name
+
+# Overrides (rate limiting)
+overrides:
+  defaults:
+    metrics_generator:
+      processors: [service-graphs, span-metrics]
+      generate_native_histograms: true
+    ingestion:
+      rate_limit_bytes: 10_000_000  # 10MB/s
+      burst_size_bytes: 15_000_000  # 15MB burst
+
+---
+# OpenTelemetry Collector Configuration
+# Purpose: Receive traces from instrumented applications and forward to Tempo + Grafana Cloud
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # Batch processor for efficient forwarding
+  batch:
+    timeout: 10s
+    send_batch_size: 1024
+    send_batch_max_size: 2048
+
+  # Resource detection
+  resourcedetection:
+    detectors: [env, system, docker]
+    timeout: 5s
+
+  # Attributes processor (add custom labels)
+  attributes:
+    actions:
+      - key: service.namespace
+        value: bodam
+        action: insert
+      - key: deployment.environment
+        value: production
+        action: insert
+
+  # Sampling processor (100% for now, can reduce later)
+  probabilistic_sampler:
+    sampling_percentage: 100.0
+
+exporters:
+  # Local Tempo instance
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+    sending_queue:
+      num_consumers: 10
+      queue_size: 1000
+
+  # Grafana Cloud Tempo
+  otlp/grafana-cloud:
+    endpoint: tempo-prod-us-central-0.grafana.net:443
+    headers:
+      authorization: Basic YOUR_BASE64_ENCODED_CREDENTIALS  # base64(instance_id:api_key)
+    sending_queue:
+      num_consumers: 5
+      queue_size: 500
+
+  # Logging exporter (for debugging)
+  logging:
+    loglevel: info
+    sampling_initial: 5
+    sampling_thereafter: 200
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [resourcedetection, attributes, batch, probabilistic_sampler]
+      exporters: [otlp/tempo, otlp/grafana-cloud, logging]
+
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      level: detailed
+      address: 0.0.0.0:8888
+
+---
+# OpenTelemetry Python SDK Configuration (Environment Variables)
+# Purpose: Auto-instrumentation configuration for FastAPI backend
+# Reference: To be set in backend Kubernetes deployment
+
+# OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+# OTEL_SERVICE_NAME: backend-api
+# OTEL_RESOURCE_ATTRIBUTES: service.namespace=bodam,deployment.environment=production
+# OTEL_TRACES_SAMPLER: always_on
+# OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED: true
+
+# Auto-instrumentation libraries:
+# - opentelemetry-instrumentation-fastapi
+# - opentelemetry-instrumentation-sqlalchemy
+# - opentelemetry-instrumentation-httpx
+# - opentelemetry-instrumentation-redis
+# - opentelemetry-instrumentation-celery
+
+---
+# TraceQL Query Examples
+# Purpose: Example queries for Llama observability assistant
+
+# Find slow traces (p95 latency)
+# { duration > 500ms }
+
+# Find error traces
+# { status = error }
+
+# Find traces for specific service
+# { service.name = "backend-api" }
+
+# Find traces with database calls
+# { span.name =~ "SELECT.*" }
+
+# Find traces with high latency HTTP calls
+# { span.name =~ "HTTP.*" && duration > 200ms }
+
+# Correlate with logs (using trace_id)
+# Tempo trace_id → Loki query: {trace_id="abc123"}
+
+# Correlate with metrics (using exemplars)
+# Prometheus exemplar links to Tempo trace_id

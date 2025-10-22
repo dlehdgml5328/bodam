@@ -9,7 +9,7 @@ from uuid import UUID
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.models.selenium_crawl_job import SeleniumCrawlJob, JobStatus
+from src.models.selenium_crawl_job import JobStatus, SeleniumCrawlJob
 from src.workers.selenium_crawler_worker import crawl_url
 
 NEWS_ENDPOINT = "https://example.com/news"

@@ -1,0 +1,531 @@
+openapi: 3.0.3
+info:
+  title: SQLAdmin UI Routes API
+  description: |
+    SQLAdmin 관리자 UI 라우트 정의
+
+    이 API는 SQLAdmin이 제공하는 웹 인터페이스의 라우트를 정의합니다.
+    모든 라우트는 `/admin` 경로 하위에 마운트됩니다.
+  version: 1.0.0
+  contact:
+    name: 보담 개발팀
+    email: dev@bodam.example.com
+
+servers:
+  - url: http://localhost:8000
+    description: 로컬 개발 서버
+  - url: https://api.bodam.example.com
+    description: 프로덕션 서버
+
+tags:
+  - name: admin-ui
+    description: SQLAdmin UI 페이지
+  - name: admin-auth
+    description: 관리자 인증
+
+paths:
+  /admin:
+    get:
+      tags:
+        - admin-ui
+      summary: 관리자 대시보드 홈
+      description: |
+        SQLAdmin 메인 대시보드 페이지
+        - 전체 메트릭 요약
+        - 최근 활동 로그
+        - Llama AI 채팅 인터페이스
+      operationId: getAdminHome
+      security:
+        - AdminSessionCookie: []
+      responses:
+        '200':
+          description: 대시보드 페이지 HTML
+          content:
+            text/html:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/login:
+    get:
+      tags:
+        - admin-auth
+      summary: 로그인 페이지
+      description: 관리자 로그인 폼 표시
+      operationId: getAdminLogin
+      responses:
+        '200':
+          description: 로그인 페이지 HTML
+          content:
+            text/html:
+              schema:
+                type: string
+
+    post:
+      tags:
+        - admin-auth
+      summary: 로그인 처리
+      description: 관리자 자격 증명 검증 및 세션 생성
+      operationId: postAdminLogin
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: 관리자 이메일
+                  example: admin@bodam.example.com
+                password:
+                  type: string
+                  format: password
+                  description: 비밀번호
+                  minLength: 8
+      responses:
+        '302':
+          description: 로그인 성공 - 대시보드로 리다이렉트
+          headers:
+            Location:
+              schema:
+                type: string
+                example: /admin
+            Set-Cookie:
+              schema:
+                type: string
+                example: admin_session=abc123; Path=/admin; HttpOnly; Secure; SameSite=Strict
+        '401':
+          description: 로그인 실패 - 잘못된 자격 증명
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /admin/logout:
+    post:
+      tags:
+        - admin-auth
+      summary: 로그아웃
+      description: 관리자 세션 종료
+      operationId: postAdminLogout
+      security:
+        - AdminSessionCookie: []
+      responses:
+        '302':
+          description: 로그아웃 성공 - 로그인 페이지로 리다이렉트
+          headers:
+            Location:
+              schema:
+                type: string
+                example: /admin/login
+
+  /admin/user:
+    get:
+      tags:
+        - admin-ui
+      summary: 사용자 목록 페이지
+      description: |
+        User 모델 목록 뷰
+        - 필터: role, tier, is_active
+        - 검색: email, name
+        - 정렬: created_at, total_donated
+      operationId: listUsers
+      security:
+        - AdminSessionCookie: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            minimum: 10
+            maximum: 100
+            default: 20
+        - name: role
+          in: query
+          schema:
+            type: string
+            enum: [donor, admin, moderator]
+        - name: tier
+          in: query
+          schema:
+            type: integer
+        - name: is_active
+          in: query
+          schema:
+            type: boolean
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: 이메일 또는 이름으로 검색
+      responses:
+        '200':
+          description: 사용자 목록 페이지 HTML
+          content:
+            text/html:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/user/{user_id}:
+    get:
+      tags:
+        - admin-ui
+      summary: 사용자 상세 페이지
+      description: 사용자 정보 상세 뷰 및 수정 폼
+      operationId: getUserDetail
+      security:
+        - AdminSessionCookie: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 사용자 상세 페이지 HTML
+          content:
+            text/html:
+              schema:
+                type: string
+        '404':
+          description: 사용자 없음
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /admin/donation:
+    get:
+      tags:
+        - admin-ui
+      summary: 기부 내역 목록 페이지
+      description: |
+        Donation 모델 목록 뷰
+        - 필터: status, type, mode
+        - 검색: toss_order_id, donor_display_name
+        - 통계: 총 기부 금액, 완료 건수, 환불 건수
+      operationId: listDonations
+      security:
+        - AdminSessionCookie: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, completed, failed, refunded]
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [one_time, recurring]
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 기부 목록 페이지 HTML
+          content:
+            text/html:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /admin/refund:
+    get:
+      tags:
+        - admin-ui
+      summary: 환불 요청 목록 페이지
+      description: |
+        Refund 모델 목록 뷰
+        - 필터: status
+        - Bulk 액션: 승인, 거부
+      operationId: listRefunds
+      security:
+        - AdminSessionCookie: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, approved, rejected]
+      responses:
+        '200':
+          description: 환불 목록 페이지 HTML
+          content:
+            text/html:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /admin/fire-station:
+    get:
+      tags:
+        - admin-ui
+      summary: 소방서 목록 페이지
+      description: |
+        FireStation 모델 목록 뷰
+        - 필터: status, region
+        - 검색: name, station_code
+      operationId: listFireStations
+      security:
+        - AdminSessionCookie: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, closed, merged]
+        - name: region
+          in: query
+          schema:
+            type: string
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 소방서 목록 페이지 HTML
+          content:
+            text/html:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /admin/news-content:
+    get:
+      tags:
+        - admin-ui
+      summary: 뉴스 콘텐츠 목록 페이지
+      description: |
+        NewsContent 모델 목록 뷰
+        - 필터: status, source
+        - 검색: title, keywords
+        - 액션: 승인, 거부
+      operationId: listNewsContent
+      security:
+        - AdminSessionCookie: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [auto_approved, pending_review, rejected]
+        - name: source
+          in: query
+          schema:
+            type: string
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 뉴스 콘텐츠 목록 페이지 HTML
+          content:
+            text/html:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /admin/selenium-crawl-job:
+    get:
+      tags:
+        - admin-ui
+      summary: Selenium 크롤 작업 목록 페이지
+      description: |
+        SeleniumCrawlJob 모델 목록 뷰 (읽기 전용)
+        - 필터: status, browser_type
+        - 액션: 재시도, 취소
+      operationId: listCrawlJobs
+      security:
+        - AdminSessionCookie: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, running, completed, failed, timeout]
+      responses:
+        '200':
+          description: 크롤 작업 목록 페이지 HTML
+          content:
+            text/html:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /admin/group:
+    get:
+      tags:
+        - admin-ui
+      summary: 그룹 캠페인 목록 페이지
+      description: |
+        Group 모델 목록 뷰
+        - 필터: status
+        - 검색: name
+      operationId: listGroups
+      security:
+        - AdminSessionCookie: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, completed, expired]
+      responses:
+        '200':
+          description: 그룹 목록 페이지 HTML
+          content:
+            text/html:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /admin/static/{file_path}:
+    get:
+      tags:
+        - admin-ui
+      summary: 정적 파일 제공
+      description: SQLAdmin CSS, JS, 이미지 파일 제공
+      operationId: getStaticFile
+      parameters:
+        - name: file_path
+          in: path
+          required: true
+          schema:
+            type: string
+          example: css/admin.css
+      responses:
+        '200':
+          description: 정적 파일
+          content:
+            text/css:
+              schema:
+                type: string
+            application/javascript:
+              schema:
+                type: string
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: 파일 없음
+
+components:
+  securitySchemes:
+    AdminSessionCookie:
+      type: apiKey
+      in: cookie
+      name: admin_session
+      description: |
+        관리자 세션 쿠키
+        - HttpOnly: true
+        - Secure: true (HTTPS)
+        - SameSite: Strict
+        - Max-Age: 1800 (30분)
+
+  responses:
+    Unauthorized:
+      description: 인증 실패 - 로그인 필요
+      content:
+        text/html:
+          schema:
+            type: string
+            example: <html><body><h1>401 Unauthorized</h1><p>로그인이 필요합니다.</p></body></html>
+
+    Forbidden:
+      description: 권한 부족 - 관리자 권한 필요
+      content:
+        text/html:
+          schema:
+            type: string
+            example: <html><body><h1>403 Forbidden</h1><p>관리자 권한이 필요합니다.</p></body></html>
+
+  schemas:
+    PaginationInfo:
+      type: object
+      description: 페이지네이션 정보
+      properties:
+        page:
+          type: integer
+          minimum: 1
+          example: 1
+        page_size:
+          type: integer
+          minimum: 10
+          maximum: 100
+          example: 20
+        total_count:
+          type: integer
+          minimum: 0
+          example: 150
+        total_pages:
+          type: integer
+          minimum: 0
+          example: 8
+
+security:
+  - AdminSessionCookie: []

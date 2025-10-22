@@ -8,6 +8,7 @@ from decimal import Decimal
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from geoalchemy2.shape import to_shape
 from pydantic import BaseModel
 from geoalchemy2.shape import to_shape
 from sqlalchemy import select

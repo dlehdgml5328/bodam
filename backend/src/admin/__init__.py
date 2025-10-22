@@ -1,0 +1,54 @@
+"""Admin 관리자 페이지 View 등록"""
+
+from sqladmin import Admin
+
+from .llama_chat.page import LlamaChatPage
+from .views.donation import DonationAdmin
+from .views.fire_station import FireStationAdmin
+from .views.group import GroupAdmin
+from .views.news_content import NewsContentAdmin
+from .views.refund import RefundAdmin
+from .views.selenium_job import SeleniumCrawlJobAdmin
+from .views.user import UserAdmin
+
+
+def register_admin_views(admin: Admin) -> None:
+    """모든 Admin View를 SQLAdmin에 등록
+
+    Args:
+        admin: SQLAdmin Admin 인스턴스
+    """
+    # 사용자 관리
+    admin.add_view(UserAdmin)
+
+    # 기부 관리
+    admin.add_view(DonationAdmin)
+    admin.add_view(RefundAdmin)
+
+    # 소방서 관리
+    admin.add_view(FireStationAdmin)
+
+    # 콘텐츠 관리
+    admin.add_view(NewsContentAdmin)
+
+    # 크롤러 작업 관리 (읽기 전용)
+    admin.add_view(SeleniumCrawlJobAdmin)
+
+    # 그룹 캠페인 관리
+    admin.add_view(GroupAdmin)
+
+    # Llama Chat 커스텀 페이지 (Knowledge Graph 기반 자연어 쿼리)
+    admin.add_view(LlamaChatPage)
+
+
+__all__ = [
+    "register_admin_views",
+    "UserAdmin",
+    "DonationAdmin",
+    "RefundAdmin",
+    "FireStationAdmin",
+    "NewsContentAdmin",
+    "SeleniumCrawlJobAdmin",
+    "GroupAdmin",
+    "LlamaChatPage",
+]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import json
 from dataclasses import dataclass
@@ -9,8 +10,11 @@ from typing import Dict, List
 
 import httpx
 
+from src.monitoring.logging import get_logger
 from src.services.ai_service import AnalysisResult, TogetherAIClient
 from src.monitoring.logging import get_logger
+
+logger = get_logger(__name__)
 
 logger = get_logger(__name__)
 

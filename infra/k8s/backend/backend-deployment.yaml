@@ -25,7 +25,7 @@ spec:
         ports:
         - containerPort: 8080
           name: http
-        
+
         command:
         - uvicorn
         - src.main:app
@@ -33,7 +33,7 @@ spec:
         - "0.0.0.0"
         - --port
         - "8080"
-        
+
         env:
         # 데이터베이스 설정
         - name: DATABASE_URL
@@ -41,48 +41,48 @@ spec:
             secretKeyRef:
               name: bodam-secrets
               key: database-url
-        
+
         # Redis 설정
         - name: REDIS_URL
           value: "redis://redis-service:6379/0"
-        
+
         # Celery 설정
         - name: CELERY_BROKER_URL
           value: "redis://redis-service:6379/0"
         - name: CELERY_RESULT_BACKEND
           value: "redis://redis-service:6379/0"
-        
+
         # JWT 설정
         - name: JWT_SECRET_KEY
           valueFrom:
             secretKeyRef:
               name: bodam-secrets
               key: jwt-secret
-        
+
         # API 설정
         - name: API_HOST
           value: "0.0.0.0"
         - name: API_PORT
           value: "8080"
-        
+
         # 로그 설정
         - name: LOG_LEVEL
           value: "INFO"
         - name: LOG_FORMAT
           value: "json"
-        
+
         # 환경 구분
         - name: ENVIRONMENT
           value: "staging"
-        
-        # 리소스 제한
+
+        # 리소스 제한 (2vCPU/4GB 노드 기준 최적화)
         resources:
           requests:
-            memory: "512Mi"
-            cpu: "250m"
+            memory: "256Mi"  # 최소 메모리 요청
+            cpu: "200m"      # 0.2 CPU (최소 요청)
           limits:
-            memory: "2Gi"
-            cpu: "1000m"
+            memory: "512Mi"  # 최대 메모리 (OOM 방지)
+            cpu: "500m"      # 0.5 CPU (최대 사용)
         
         # Health Check
         livenessProbe:
@@ -107,7 +107,7 @@ spec:
       - name: celery-worker
         image: bodam/backend:latest
         imagePullPolicy: Always
-        
+
         command:
         - celery
         - -A
@@ -116,7 +116,7 @@ spec:
         - --loglevel=info
         - --concurrency=4
         - --max-tasks-per-child=100
-        
+
         env:
         # 데이터베이스 설정
         - name: DATABASE_URL
@@ -124,13 +124,13 @@ spec:
             secretKeyRef:
               name: bodam-secrets
               key: database-url
-        
+
         # Celery 설정
         - name: CELERY_BROKER_URL
           value: "redis://redis-service:6379/0"
         - name: CELERY_RESULT_BACKEND
           value: "redis://redis-service:6379/0"
-        
+
         # Selenium 설정
         - name: SELENIUM_HEADLESS
           value: "true"
@@ -138,21 +138,21 @@ spec:
           value: "10"
         - name: SELENIUM_DEFAULT_TIMEOUT
           value: "30"
-        
+
         # 로그 설정
         - name: LOG_LEVEL
           value: "INFO"
         - name: LOG_FORMAT
           value: "json"
-        
-        # 리소스 제한
+
+        # 리소스 제한 (2vCPU/4GB 노드 기준 최적화)
         resources:
           requests:
-            memory: "512Mi"
-            cpu: "250m"
+            memory: "256Mi"  # 최소 메모리 요청
+            cpu: "200m"      # 0.2 CPU (최소 요청)
           limits:
-            memory: "2Gi"
-            cpu: "1000m"
+            memory: "512Mi"  # 최대 메모리 (OOM 방지)
+            cpu: "500m"      # 0.5 CPU (최대 사용)
         
         # Health Check (Celery 상태 확인)
         livenessProbe:

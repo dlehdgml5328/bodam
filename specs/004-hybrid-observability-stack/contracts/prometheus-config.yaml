@@ -1,0 +1,103 @@
+# Prometheus Configuration Contract
+# Purpose: Define scrape targets, metrics, and Grafana Cloud remote_write
+# Reference: research.md Section 1 (Prometheus Strategy) and Section 2 (Grafana Cloud)
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'bodam-doks'
+    environment: 'production'
+
+# Grafana Cloud Remote Write Configuration
+remote_write:
+  - url: https://prometheus-prod-us-central-0.grafana.net/api/prom/push
+    basic_auth:
+      username: YOUR_GRAFANA_CLOUD_INSTANCE_ID  # Replace with actual instance ID
+      password: YOUR_GRAFANA_CLOUD_API_KEY  # Replace with actual API key
+    write_relabel_configs:
+      # Exclude Go runtime metrics to save series count
+      - source_labels: [__name__]
+        regex: 'go_.*'
+        action: drop
+      - source_labels: [__name__]
+        regex: 'process_.*'
+        action: drop
+    queue_config:
+      capacity: 10000
+      max_shards: 5
+      min_shards: 1
+      max_samples_per_send: 1000
+      batch_send_deadline: 5s
+
+# Alerting configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+# Alert rules file
+rule_files:
+  - "/etc/prometheus/alert-rules.yml"
+
+# Scrape configurations
+scrape_configs:
+  # Backend API metrics (14 core metrics from research.md)
+  - job_name: 'backend-api'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['backend:8000']
+    metrics_path: '/metrics'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+      - source_labels: [__address__]
+        target_label: service
+        replacement: 'backend-api'
+    metric_relabel_configs:
+      # Keep only our 14 core metrics
+      - source_labels: [__name__]
+        regex: '(http_requests_total|http_request_duration_seconds|http_request_size_bytes|http_response_size_bytes|http_requests_in_progress|db_connection_pool_size|db_connection_pool_in_use|db_connection_pool_available|db_connection_pool_waiting|db_query_duration_seconds|http_client_pool_size|http_client_pool_in_use|http_client_waiting_requests|celery_tasks_total)'
+        action: keep
+
+  # Celery worker metrics (lower frequency)
+  - job_name: 'celery-worker'
+    scrape_interval: 60s
+    static_configs:
+      - targets: ['celery-worker:8000']
+    metrics_path: '/metrics'
+
+  # K6 Load Testing Metrics (via statsd-exporter)
+  - job_name: 'k6-loadtest'
+    scrape_interval: 10s
+    static_configs:
+      - targets: ['statsd-exporter:9102']
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'k6_.*'
+        action: keep
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    scrape_interval: 60s
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Node exporter for infrastructure metrics (optional)
+  - job_name: 'node-exporter'
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['node-exporter:9100']
+    metric_relabel_configs:
+      # Keep only essential node metrics
+      - source_labels: [__name__]
+        regex: 'node_(cpu_seconds_total|memory_MemTotal_bytes|memory_MemAvailable_bytes|disk_read_bytes_total|disk_written_bytes_total|network_receive_bytes_total|network_transmit_bytes_total)'
+        action: keep
+
+# Storage configuration (local 3-day retention)
+storage:
+  tsdb:
+    path: /prometheus/data
+    retention.time: 3d
+    retention.size: 10GB

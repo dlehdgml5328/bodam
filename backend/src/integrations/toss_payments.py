@@ -20,7 +20,6 @@ from src.services.donation_service import (
     PaymentsGateway,
 )
 
-
 logger = logging.getLogger(__name__)
 
 

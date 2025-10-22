@@ -3,7 +3,6 @@
 환경 변수를 통해 설정을 로드하고 관리합니다.
 """
 
-import os
 from typing import Optional
 from pydantic import ConfigDict
 from pydantic_settings import BaseSettings

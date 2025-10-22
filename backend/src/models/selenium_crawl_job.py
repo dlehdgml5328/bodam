@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import enum
 from datetime import datetime
-from typing import Dict, Any, Optional
-from uuid import UUID, uuid4
+from typing import Any, Dict
+from uuid import uuid4
 
-from sqlalchemy import Column, String, Integer, Text, CheckConstraint, Enum as SQLEnum
-from sqlalchemy.dialects.postgresql import UUID as PGUUID, JSONB, TIMESTAMP
+from sqlalchemy import CheckConstraint, Column, Integer, String, Text
+from sqlalchemy import Enum as SQLEnum
+from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import relationship
 
 from src.models.base import Base

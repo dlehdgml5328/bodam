@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+import os
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy import create_engine, pool
 from sqlalchemy.engine import Connection
 
-import os
+from alembic import context
 from src.models.base import Base
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://bodam:bodam@localhost:5432/bodam")

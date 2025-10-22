@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from alembic import op
+import sqlalchemy as sa
 from geoalchemy2 import Geometry
 from pgvector.sqlalchemy import Vector
-import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "001_initial"

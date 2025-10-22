@@ -3,9 +3,11 @@
 
 화재 출동 데이터에 매칭되는 뉴스 기사 검색
 """
-import httpx
-from typing import List, Dict
 from datetime import datetime, timedelta
+from typing import Dict, List
+
+import httpx
+
 from src.monitoring.logging import get_logger
 
 logger = get_logger(__name__)

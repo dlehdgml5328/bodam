@@ -5,7 +5,6 @@ from __future__ import annotations
 from sqlalchemy import MetaData
 from sqlalchemy.orm import DeclarativeBase, declared_attr
 
-
 NAMING_CONVENTION = {
     "ix": "ix_%(column_0_label)s",
     "uq": "uq_%(table_name)s_%(column_0_name)s",

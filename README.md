@@ -38,6 +38,7 @@
 - Docker & Docker Compose
 - Python 3.11+
 - Node.js 18+
+- K6 (부하 테스트용)
 
 ### 로컬 개발 환경 설정
 

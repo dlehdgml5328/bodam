@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import re
-from email_validator import EmailNotValidError, validate_email as _validate_email
+
+from email_validator import EmailNotValidError
+from email_validator import validate_email as _validate_email
 
 
 def validate_email(email: str) -> bool:

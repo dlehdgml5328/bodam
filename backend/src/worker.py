@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 
 from celery import Celery
-from celery.schedules import crontab
+from dotenv import load_dotenv
 
 # .env 파일 로드
 load_dotenv()
@@ -32,11 +32,11 @@ celery_app.conf.beat_schedule = {
     },
 }
 
-celery_app.conf.timezone = 'Asia/Seoul'
+celery_app.conf.timezone = "Asia/Seoul"
 
 # Task 자동 검색
 celery_app.autodiscover_tasks([
-    'src.workers',
+    "src.workers",
 ])
 
 # 명시적으로 워커 모듈 import
