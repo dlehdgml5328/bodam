@@ -25,6 +25,8 @@ from .fire_incident import FireIncident
 from .dispatch_event import DispatchEvent
 from .news_match import NewsMatch
 from .selenium_crawl_job import SeleniumCrawlJob
+from .knowledge_document import KnowledgeDocument
+from .refund import Refund
 
 __all__ = [
     "Base",
@@ -51,4 +53,6 @@ __all__ = [
     "DispatchEvent",
     "NewsMatch",
     "SeleniumCrawlJob",
+    "KnowledgeDocument",
+    "Refund",
 ]

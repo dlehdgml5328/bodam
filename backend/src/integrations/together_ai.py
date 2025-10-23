@@ -7,7 +7,7 @@ import json
 import os
 import time
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Any, Dict, List
 
 import anyio
 from together import Together
@@ -192,6 +192,85 @@ class TogetherAIHttpClient(TogetherAIClient):
 
                 logger.error(f"[TogetherAI] Unexpected error: {e}", exc_info=True)
                 raise
+
+    async def chat_completion(
+        self,
+        *,
+        messages: list[dict[str, Any]],
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        **kwargs: Any,
+    ) -> tuple[str, Any]:
+        """
+        Wrapper around Together chat completions.
+
+        Returns:
+            content: 첫 번째 선택지의 메시지 콘텐츠
+            raw_result: Together SDK가 반환한 원본 객체
+        """
+        payload: dict[str, Any] = {
+            "model": self._settings.model,
+            "messages": messages,
+            "temperature": temperature if temperature is not None else self._settings.temperature,
+        }
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        if kwargs:
+            payload.update(kwargs)
+
+        await _acquire_rate_limit()
+        result = await anyio.to_thread.run_sync(lambda: self._client.chat.completions.create(**payload))
+
+        choice = result.choices[0]
+        message = getattr(choice, "message", None)
+        if isinstance(choice, dict):
+            message = choice.get("message")
+
+        content = ""
+        if isinstance(message, dict):
+            content = message.get("content", "")
+        elif message is not None:
+            content = getattr(message, "content", "")
+
+        return content, result
+
+    async def create_embedding(
+        self,
+        *,
+        model: str,
+        input: Any,
+        **kwargs: Any,
+    ) -> tuple[list[float], Any]:
+        """
+        Wrapper around Together embedding endpoint.
+
+        Returns:
+            embedding: 첫 번째 결과의 임베딩 벡터
+            raw_result: Together SDK가 반환한 원본 객체
+        """
+        payload: dict[str, Any] = {
+            "model": model,
+            "input": input,
+        }
+        if kwargs:
+            payload.update(kwargs)
+
+        await _acquire_rate_limit()
+        result = await anyio.to_thread.run_sync(lambda: self._client.embeddings.create(**payload))
+
+        data = getattr(result, "data", None)
+        if data is None and isinstance(result, dict):
+            data = result.get("data")
+
+        embedding: list[float] = []
+        if data:
+            first = data[0]
+            if isinstance(first, dict):
+                embedding = first.get("embedding", [])
+            else:
+                embedding = getattr(first, "embedding", [])
+
+        return embedding, result
 
     def _build_evaluation_prompt(
         self,

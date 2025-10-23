@@ -10,7 +10,7 @@ import asyncpg
 
 @dataclass
 class GraphSettings:
-    dsn: str = os.getenv("GRAPH_DB_DSN", "postgresql://user:pass@localhost:5432/graph")
+    dsn: str = os.getenv("GRAPH_DB_DSN", "postgresql://bodam:bodam@db:5432/bodam")
 
 
 class GraphClient:

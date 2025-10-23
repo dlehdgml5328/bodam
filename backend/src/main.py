@@ -42,6 +42,7 @@ from .api import (
 from .api.admin import (
     auth as admin_auth,
     chat as admin_chat,
+    knowledge as admin_knowledge,
     refund_actions as admin_refund_actions,
     refunds as admin_refunds,
     resources as admin_resources,
@@ -130,7 +131,8 @@ app.include_router(webpush.router)
 
 # Admin API 라우터 등록 (SQLAdmin 외부 API)
 app.include_router(admin_auth.router)  # /admin/auth/* - Admin 로그인/로그아웃
-app.include_router(admin_chat.router)  # /admin/api/chat/* - Llama Chat API
+app.include_router(admin_chat.router)  # /admin-api/chat/* - Llama Chat API
+app.include_router(admin_knowledge.router)  # /admin-api/knowledge/* - RAG Knowledge Documents
 app.include_router(admin_refund_actions.router)  # /admin/api/refunds/* - 환불 처리 액션
 app.include_router(admin_refunds.router)  # Admin 환불 조회
 app.include_router(admin_resources.router)  # Admin 리소스 관리

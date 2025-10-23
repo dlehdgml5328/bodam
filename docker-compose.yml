@@ -32,6 +32,8 @@ services:
       - COOKIE_SAMESITE=Lax
       - ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
       - DEBUG=true
+      - TOGETHER_AI_API_KEY=${TOGETHER_AI_API_KEY}
+      - TOGETHER_AI_MODEL=${TOGETHER_AI_MODEL}
     ports:
       - "8000:8000"
     depends_on:

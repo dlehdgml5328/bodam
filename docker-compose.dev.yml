@@ -134,7 +134,7 @@ services:
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       - YOUTUBE_API_KEY=${YOUTUBE_API_KEY}
       - TOGETHER_AI_API_KEY=${TOGETHER_AI_API_KEY}
-      - TOGETHER_AI_MODEL=meta-llama/Llama-3.3-70B-Instruct-Turbo-Free
+      - TOGETHER_AI_MODEL=${TOGETHER_AI_MODEL:-meta-llama/Llama-3.3-70B-Instruct-Turbo}
       - TOSS_CLIENT_KEY=${TOSS_CLIENT_KEY}
       - TOSS_SECRET_KEY=${TOSS_SECRET_KEY}
 
@@ -157,6 +157,7 @@ services:
     volumes:
       - ./backend/src:/app/src:rw
       - ./backend/alembic:/app/alembic:rw
+      - ./backend/knowledge_docs:/app/knowledge_docs:rw
       - ./backend/firebase-service-account.json:/app/firebase-service-account.json:ro
     networks:
       - bodam-network
@@ -183,7 +184,7 @@ services:
       - NAVER_CLIENT_SECRET=${NAVER_CLIENT_SECRET}
       - YOUTUBE_API_KEY=${YOUTUBE_API_KEY}
       - TOGETHER_AI_API_KEY=${TOGETHER_AI_API_KEY}
-      - TOGETHER_AI_MODEL=meta-llama/Llama-3.3-70B-Instruct-Turbo-Free
+      - TOGETHER_AI_MODEL=${TOGETHER_AI_MODEL:-meta-llama/Llama-3.3-70B-Instruct-Turbo}
     depends_on:
       - db
       - redis-queue
@@ -212,7 +213,7 @@ services:
       - NAVER_CLIENT_SECRET=${NAVER_CLIENT_SECRET}
       - YOUTUBE_API_KEY=${YOUTUBE_API_KEY}
       - TOGETHER_AI_API_KEY=${TOGETHER_AI_API_KEY}
-      - TOGETHER_AI_MODEL=meta-llama/Llama-3.3-70B-Instruct-Turbo-Free
+      - TOGETHER_AI_MODEL=${TOGETHER_AI_MODEL:-meta-llama/Llama-3.3-70B-Instruct-Turbo}
     depends_on:
       - db
       - redis-queue
@@ -243,6 +244,20 @@ services:
       - bodam-network
 
   # Celery Flower (모니터링)
+
+  # ============================================
+  # Redis GUI (RedisInsight)
+  # ============================================
+  redis-insight:
+    image: redis/redisinsight:latest
+    container_name: bodam-redis-insight
+    ports:
+      - "5540:5540"
+    volumes:
+      - redis-insight-data:/data
+    networks:
+      - bodam-network
+
   # ============================================
   # Frontend
   # ============================================
@@ -274,3 +289,4 @@ volumes:
   postgres-data:
   redis-queue-data:
   redis-semantic-data:
+  redis-insight-data:

@@ -16,7 +16,7 @@ from src.monitoring.logging import get_logger
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/admin/api/chat", tags=["admin-chat"])
+router = APIRouter(prefix="/admin-api/chat", tags=["admin-chat"])
 
 
 # Pydantic 모델
