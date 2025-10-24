@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /api
+Disallow: /mypage
+
+# Sitemap location
+Sitemap: https://bodam.example/sitemap.xml
+
+# Specific bots
+User-agent: Googlebot
+Allow: /

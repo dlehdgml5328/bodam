@@ -263,6 +263,115 @@ services:
     networks:
       - bodam-network
 
+  # ============================================
+  # 관측성 스택 (Prometheus, Grafana, statsd-exporter)
+  # ============================================
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: bodam-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./specs/004-hybrid-observability-stack/contracts/prometheus-config.yaml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=3d'
+      - '--storage.tsdb.retention.size=10GB'
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - bodam-network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.2.3
+    container_name: bodam-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./infra/k8s/observability/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - bodam-network
+    restart: unless-stopped
+
+  statsd-exporter:
+    image: prom/statsd-exporter:v0.26.0
+    container_name: bodam-statsd-exporter
+    ports:
+      - "9102:9102"  # Prometheus metrics endpoint
+      - "8125:8125/udp"  # statsd UDP port
+    command:
+      - '--statsd.mapping-config=/etc/statsd/statsd-mapping.yml'
+    volumes:
+      - ./infra/k8s/observability/statsd-mapping.yml:/etc/statsd/statsd-mapping.yml:ro
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9102/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - bodam-network
+    restart: unless-stopped
+
+  # ============================================
+  # Node Exporter - System metrics
+  # ============================================
+  node-exporter:
+    image: prom/node-exporter:v1.7.0
+    container_name: bodam-node-exporter
+    ports:
+      - "9100:9100"
+    command:
+      - '--path.rootfs=/host'
+    volumes:
+      - /:/host:ro,rslave
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9100/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - bodam-network
+    restart: unless-stopped
+
+  # ============================================
+  # K6 Load Testing
+  # ============================================
+  k6:
+    image: grafana/k6:latest
+    container_name: bodam-k6
+    profiles:
+      - test  # 'docker-compose --profile test up k6' 로 실행
+    environment:
+      - K6_SCENARIO=baseline  # baseline, target, stress, spike 중 선택
+      - BASE_URL=http://backend:8000
+    volumes:
+      - ./specs/004-hybrid-observability-stack/contracts/k6-scenarios.js:/scripts/k6-scenarios.js:ro
+    command: run /scripts/k6-scenarios.js
+    depends_on:
+      - backend
+      - statsd-exporter
+    networks:
+      - bodam-network
+
 # ============================================
 # Networks & Volumes
 # ============================================
@@ -274,3 +383,5 @@ volumes:
   postgres-data:
   redis-queue-data:
   redis-semantic-data:
+  prometheus-data:
+  grafana-data:

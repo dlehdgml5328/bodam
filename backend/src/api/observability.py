@@ -94,6 +94,27 @@ celery_tasks_total = Counter(
     ["task_name", "status"],
 )
 
+# --- 시나리오 테스트용 신규 메트릭 ---
+
+# 1) 동시 기부 Race 재현용
+bodam_donation_duplicate_total = Counter(
+    "bodam_donation_duplicate_total",
+    "Total duplicate donation creation attempts detected",
+    ["fire_station_id"],
+)
+
+# 2) 결제 멱등성 테스트용
+bodam_payment_idempotency_key_hit_total = Counter(
+    "bodam_payment_idempotency_key_hit_total",
+    "Total payment confirmation requests hitting the idempotency key cache",
+)
+
+# 1) DB Deadlock 감지용
+db_deadlocks_total = Counter(
+    "db_deadlocks_total",
+    "Total database deadlocks detected",
+    ["transaction_name"],
+)
 
 @router.get("/metrics")
 def metrics():

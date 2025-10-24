@@ -76,11 +76,11 @@ export const scenario_spike = {
 // Thresholds (Success Criteria from spec.md)
 export const options = {
   scenarios: {
-    // Select scenario via K6_SCENARIO env variable
-    baseline: __ENV.K6_SCENARIO === 'baseline' ? scenario_baseline : null,
-    target: __ENV.K6_SCENARIO === 'target' ? scenario_target : null,
-    stress: __ENV.K6_SCENARIO === 'stress' ? scenario_stress : null,
-    spike: __ENV.K6_SCENARIO === 'spike' ? scenario_spike : null,
+    // Select scenario via K6_SCENARIO env variable (default: baseline)
+    ...((__ENV.K6_SCENARIO === 'baseline' || !__ENV.K6_SCENARIO) && { baseline: scenario_baseline }),
+    ...(__ENV.K6_SCENARIO === 'target' && { target: scenario_target }),
+    ...(__ENV.K6_SCENARIO === 'stress' && { stress: scenario_stress }),
+    ...(__ENV.K6_SCENARIO === 'spike' && { spike: scenario_spike }),
   },
   thresholds: {
     // HTTP request duration - p95 < 500ms (from spec.md)
