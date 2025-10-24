@@ -175,8 +175,8 @@ async def search_videos_node(state: MatcherState) -> MatcherState:
             api_key=os.getenv('YOUTUBE_API_KEY', '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')
         )
 
-        search_start = (datetime.utcnow() - timedelta(days=3)).strftime('%Y-%m-%dT%H:%M:%SZ')
-        logger.info(f"[Node] Searching videos published after: {search_start}")
+        search_start = (datetime.utcnow() - timedelta(days=7)).strftime('%Y-%m-%dT%H:%M:%SZ')
+        logger.info(f"[Node] Searching videos published after: {search_start} (7 days range)")
 
         video_results = youtube_client.search(
             query=f"{primary_keyword} 화재",

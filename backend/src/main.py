@@ -32,6 +32,7 @@ from .api import (
     messages,
     news,
     notifications,
+    observability,
     payments,
     rankings,
     refunds,
@@ -141,6 +142,9 @@ app.include_router(admin_search.router)  # Admin 검색
 # Webhooks
 app.include_router(toss.router)
 app.include_router(crawler.router)
+
+# Observability - Prometheus metrics
+app.include_router(observability.router)
 
 
 @app.get("/")

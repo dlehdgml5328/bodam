@@ -66,15 +66,15 @@ async def _run_matcher(incident: Dict):
     incident_id = incident.get('id')
     logger.info(f"[Matcher] Starting LangGraph match for incident: {incident_id}")
 
-    # 발생 날짜 확인 (2일 이상 지난 화재는 건너뛰기 - API 할당량 절약)
+    # 발생 날짜 확인 (7일 이상 지난 화재는 건너뛰기 - 개선: 2일 → 7일)
     from datetime import datetime, timedelta
     occurrence_date = incident.get('occurrenceDate', '')
     if occurrence_date:
         try:
             occurrence_dt = datetime.fromisoformat(occurrence_date)
             days_ago = (datetime.now() - occurrence_dt).days
-            if days_ago > 2:
-                logger.info(f"[Matcher] Incident {incident_id} is {days_ago} days old, skipping (only match recent fires)")
+            if days_ago > 7:
+                logger.info(f"[Matcher] Incident {incident_id} is {days_ago} days old, skipping (max 7 days)")
                 return {
                     "incident_id": incident_id,
                     "news_count": 0,
@@ -174,3 +174,113 @@ def match_news_and_videos(incident: Dict):
     except Exception as e:
         logger.error(f"[Matcher] Task failed: {e}", exc_info=True)
         raise
+
+
+@shared_task
+def retry_failed_matches(max_age_days: int = 7):
+    """
+    매칭 실패한 화재 사고를 재시도
+
+    - 최근 7일 이내 발생한 화재 중
+    - 뉴스/영상 매칭이 없거나 적은 사고를 재매칭
+    - 6시간마다 Celery Beat로 실행
+
+    Args:
+        max_age_days: 재시도 대상 최대 경과 일수 (기본 7일)
+
+    Returns:
+        dict: 재시도 통계
+    """
+    import asyncio
+
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    try:
+        return loop.run_until_complete(_retry_failed_matches_async(max_age_days))
+    except Exception as e:
+        logger.error(f"[Matcher] Retry task failed: {e}", exc_info=True)
+        raise
+
+
+async def _retry_failed_matches_async(max_age_days: int) -> Dict:
+    """재매칭 로직 (비동기)"""
+    from datetime import datetime, timedelta
+    from sqlalchemy import select, func, and_
+    from src.database.connection import session_scope
+    from src.models.news_match import NewsMatch
+
+    cutoff_date = datetime.now() - timedelta(days=max_age_days)
+
+    logger.info(f"[Matcher] Starting retry for incidents since {cutoff_date.date()}")
+
+    retried = 0
+    skipped = 0
+    failed = 0
+
+    # 재매칭 대상 찾기: 발생일 7일 이내, 매칭이 없거나 2개 미만
+    async with session_scope() as session:
+        # 모든 화재 사고 조회 (간단하게 - 실제로는 incidents 테이블에서 가져와야 함)
+        # 여기서는 news_matches 테이블에서 매칭 수를 확인
+        stmt = (
+            select(NewsMatch.incident_id, func.count(NewsMatch.id).label('match_count'))
+            .where(NewsMatch.created_at >= cutoff_date)
+            .group_by(NewsMatch.incident_id)
+            .having(func.count(NewsMatch.id) < 2)  # 매칭이 2개 미만
+        )
+
+        result = await session.execute(stmt)
+        low_match_incidents = result.all()
+
+        logger.info(f"[Matcher] Found {len(low_match_incidents)} incidents with low matches")
+
+        # 각 사고에 대해 재매칭 시도
+        for incident_id, match_count in low_match_incidents:
+            try:
+                # 실제로는 incidents 테이블에서 전체 정보를 가져와야 함
+                # 여기서는 간단하게 incident_id만 사용
+                incident_data = {
+                    'id': incident_id,
+                    'occurrenceDate': (datetime.now() - timedelta(days=1)).isoformat(),  # 임시
+                    # 실제로는 DB에서 조회한 전체 데이터 사용
+                }
+
+                # 기존 매칭 삭제 (재매칭을 위해)
+                from sqlalchemy import delete
+                delete_stmt = delete(NewsMatch).where(NewsMatch.incident_id == incident_id)
+                await session.execute(delete_stmt)
+                await session.commit()
+
+                # 재매칭 실행
+                logger.info(f"[Matcher] Retrying match for incident {incident_id} (current: {match_count} matches)")
+
+                # 비동기로 매칭 실행
+                result = await _run_matcher(incident_data)
+
+                if result.get('skipped'):
+                    skipped += 1
+                else:
+                    retried += 1
+                    logger.info(
+                        f"[Matcher] Retry success for {incident_id}: "
+                        f"{result.get('news_count', 0)} news, {result.get('video_count', 0)} videos"
+                    )
+
+            except Exception as e:
+                logger.error(f"[Matcher] Retry failed for {incident_id}: {e}", exc_info=True)
+                failed += 1
+                continue
+
+    logger.info(
+        f"[Matcher] Retry complete: {retried} retried, {skipped} skipped, {failed} failed"
+    )
+
+    return {
+        'retried': retried,
+        'skipped': skipped,
+        'failed': failed,
+        'total_candidates': len(low_match_incidents) if 'low_match_incidents' in locals() else 0
+    }

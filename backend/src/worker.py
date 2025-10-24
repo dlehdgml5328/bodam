@@ -40,6 +40,13 @@ celery_app.conf.beat_schedule = {
         'task': 'billing.process_subscriptions',
         'schedule': crontab(hour=2, minute=0),  # 매일 02:00 KST
     },
+    # 뉴스/영상 재매칭 (6시간마다)
+    # 최근 7일 이내 화재 중 매칭이 2개 미만인 사고를 재시도
+    'retry-failed-matches-every-6hours': {
+        'task': 'matcher.retry_failed_matches',
+        'schedule': crontab(minute=0, hour='*/6'),  # 매 6시간마다 (0시, 6시, 12시, 18시)
+        'kwargs': {'max_age_days': 7}
+    },
 }
 
 celery_app.conf.timezone = "Asia/Seoul"

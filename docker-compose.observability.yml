@@ -176,6 +176,7 @@ services:
 # ============================================
 networks:
   bodam-network:
+    name: bodam_bodam-network
     external: true
 
 volumes:

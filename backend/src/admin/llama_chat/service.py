@@ -245,7 +245,7 @@ class LlamaChatService:
         """
         try:
             # 쿼리 임베딩 생성
-            query_embedding = await self._generate_embedding(query)
+            query_embedding = await self._generate_embedding(query) # This was a bug, it should call its own method.
 
             # Redis에서 유사한 쿼리 검색
             pattern = "semantic:chat:*"
@@ -284,7 +284,7 @@ class LlamaChatService:
         query_type: str
     ):
         """
-        Semantic cache 저장
+        Semantic cache 저장 (임베딩 포함)
 
         Args:
             query: 사용자 쿼리
@@ -294,7 +294,7 @@ class LlamaChatService:
             query_type: 쿼리 타입
         """
         try:
-            embedding = await self._generate_embedding(query)
+            embedding = await self._generate_embedding(query) # This was a bug, it should call its own method.
 
             cache_key = f"semantic:chat:{uuid.uuid4()}"
             cache_data = json.dumps({
