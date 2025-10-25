@@ -120,3 +120,52 @@ db_deadlocks_total = Counter(
 def metrics():
     """FR-001, FR-004: Prometheus metrics endpoint"""
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+@router.post("/observability/test/donation-duplicate")
+def test_donation_duplicate(fire_station_id: str = "test-station"):
+    """테스트용: 중복 기부 메트릭 증가"""
+    bodam_donation_duplicate_total.labels(fire_station_id=fire_station_id).inc()
+    return {"message": f"Incremented bodam_donation_duplicate_total for {fire_station_id}"}
+
+
+@router.post("/observability/test/payment-idempotency")
+def test_payment_idempotency():
+    """테스트용: 결제 멱등성 메트릭 증가"""
+    bodam_payment_idempotency_key_hit_total.inc()
+    return {"message": "Incremented bodam_payment_idempotency_key_hit_total"}
+
+
+@router.post("/observability/test/deadlock")
+def test_deadlock(transaction_name: str = "test_transaction"):
+    """테스트용: DB Deadlock 메트릭 증가"""
+    db_deadlocks_total.labels(transaction_name=transaction_name).inc()
+    return {"message": f"Incremented db_deadlocks_total for {transaction_name}"}
+
+
+@router.post("/observability/test/celery-task")
+def test_celery_task(task_name: str = "test_task", status: str = "SUCCESS"):
+    """테스트용: Celery 작업 메트릭 증가"""
+    celery_tasks_total.labels(task_name=task_name, status=status).inc()
+    return {"message": f"Incremented celery_tasks_total for {task_name}/{status}"}
+
+
+@router.post("/observability/test/db-pool")
+def test_db_pool(service: str = "backend", in_use: int = 5):
+    """테스트용: DB 커넥션 풀 메트릭 설정"""
+    db_connection_pool_in_use.labels(service=service).set(in_use)
+    db_connection_pool_size.labels(service=service).set(10)
+    db_connection_pool_available.labels(service=service).set(10 - in_use)
+    return {"message": f"Set DB pool metrics for {service}: {in_use}/10 in use"}
+
+
+# Export metrics for use in other modules
+__all__ = [
+    "router",
+    "http_requests_total",
+    "http_request_duration_seconds",
+    "bodam_donation_duplicate_total",
+    "bodam_payment_idempotency_key_hit_total",
+    "db_deadlocks_total",
+    "celery_tasks_total",
+]

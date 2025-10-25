@@ -98,6 +98,58 @@ app.add_middleware(
 )
 
 # Add other middleware (order matters - last added runs first)
+# Prometheus metrics middleware (먼저 추가하여 모든 요청 측정)
+import time
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+
+class PrometheusMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        # /metrics 엔드포인트는 측정하지 않음
+        if request.url.path == "/metrics":
+            return await call_next(request)
+
+        start_time = time.time()
+        response = await call_next(request)
+        duration = time.time() - start_time
+
+        # Import metrics here to avoid circular dependency
+        from .api.observability import (
+            http_requests_total,
+            http_request_duration_seconds,
+            db_connection_pool_size,
+            db_connection_pool_in_use,
+            db_connection_pool_available,
+        )
+
+        # Record HTTP metrics
+        http_requests_total.labels(
+            method=request.method,
+            endpoint=request.url.path,
+            status=response.status_code
+        ).inc()
+
+        http_request_duration_seconds.labels(
+            method=request.method,
+            endpoint=request.url.path
+        ).observe(duration)
+
+        # Record DB pool metrics
+        try:
+            pool = engine.pool
+            pool_size = pool.size()
+            checkedin = pool.checkedin()
+
+            db_connection_pool_size.labels(service="backend-api").set(pool_size)
+            db_connection_pool_in_use.labels(service="backend-api").set(checkedin)
+            available = pool_size - checkedin
+            db_connection_pool_available.labels(service="backend-api").set(max(0, available))
+        except Exception:
+            pass  # Pool metrics 실패해도 요청은 계속 처리
+
+        return response
+
+app.add_middleware(PrometheusMiddleware)
 app.add_middleware(AuthMiddleware)
 
 # Rate limiting (활성화 여부는 환경변수로 제어)

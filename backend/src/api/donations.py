@@ -41,7 +41,11 @@ from src.services.donation_service import (
     RegularDonationSpec,
 )
 from src.services.user_service import UserNotFoundError, UserService
+from src.api.observability import bodam_donation_duplicate_total
+from src.cache.distributed_lock import acquire_lock, LockAcquisitionError
+import logging
 
+logger = logging.getLogger(__name__)
 router = APIRouter(tags=["donations"])
 
 
@@ -312,31 +316,60 @@ async def create_donation_checkout(
         else None
     )
 
-    async with _payments_gateway() as gateway:
-        service = DonationService(session, gateway)
-        intent = await service.prepare_donation_checkout(
-            user_id=user.id,
-            mode=payload.mode,
-            amount=payload.amount,
-            currency=payload.currency,
-            fire_station_id=fire_station_uuid,
-            allocations=allocations,
-            donor=donor_spec,
-            group=group_spec,
-            regular=regular_spec,
-            message=payload.message,
-            metadata=payload.metadata,
-            success_url=payload.success_redirect_url,
-            fail_url=payload.fail_redirect_url,
-        )
+    # Redis 분산 락으로 동시 기부 방지
+    # Lock key: donation:{user_id}:{fire_station_id}:{amount}
+    lock_key = f"donation:{user.id}:{fire_station_uuid}:{payload.amount}"
 
-    return DonationCheckoutResponse(
-        donation_id=intent.donation.id,
-        order_id=intent.donation.toss_order_id,
-        payment_url=intent.payment_url,
-        billing_auth_url=intent.billing_auth_url,
-        subscription_id=intent.subscription.id if intent.subscription else None,
-    )
+    try:
+        async with acquire_lock(lock_key, timeout=10) as lock_acquired:
+            if not lock_acquired:
+                # 락 획득 실패 = 중복 기부 시도
+                logger.warning(f"Duplicate donation attempt (lock failed): user={user.id}, station={fire_station_uuid}")
+                bodam_donation_duplicate_total.labels(fire_station_id=str(fire_station_uuid or "unknown")).inc()
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="동일한 기부가 이미 처리 중입니다. 잠시 후 다시 시도해주세요."
+                )
+
+            async with _payments_gateway() as gateway:
+                service = DonationService(session, gateway)
+                intent = await service.prepare_donation_checkout(
+                    user_id=user.id,
+                    mode=payload.mode,
+                    amount=payload.amount,
+                    currency=payload.currency,
+                    fire_station_id=fire_station_uuid,
+                    allocations=allocations,
+                    donor=donor_spec,
+                    group=group_spec,
+                    regular=regular_spec,
+                    message=payload.message,
+                    metadata=payload.metadata,
+                    success_url=payload.success_redirect_url,
+                    fail_url=payload.fail_redirect_url,
+                )
+                await session.commit()
+
+            return DonationCheckoutResponse(
+                donation_id=intent.donation.id,
+                order_id=intent.donation.toss_order_id,
+                payment_url=intent.payment_url,
+                billing_auth_url=intent.billing_auth_url,
+                subscription_id=intent.subscription.id if intent.subscription else None,
+            )
+    except LockAcquisitionError:
+        # 락 획득 실패 (중복 기부)
+        logger.warning(f"Duplicate donation attempt (lock timeout): user={user.id}, station={fire_station_uuid}")
+        bodam_donation_duplicate_total.labels(fire_station_id=str(fire_station_uuid or "unknown")).inc()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="동일한 기부가 이미 처리 중입니다. 잠시 후 다시 시도해주세요."
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Donation creation error: {e}", exc_info=True)
+        raise
 
 
 @router.get("/donations/recent")

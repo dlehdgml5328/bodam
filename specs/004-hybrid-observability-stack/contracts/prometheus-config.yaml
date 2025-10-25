@@ -56,17 +56,10 @@ scrape_configs:
         target_label: service
         replacement: 'backend-api'
     metric_relabel_configs:
-      # Keep only our 14 core metrics
+      # Keep only our 14 core metrics (including histogram suffixes: _bucket, _count, _sum)
       - source_labels: [__name__]
-        regex: '(http_requests_total|http_request_duration_seconds|http_request_size_bytes|http_response_size_bytes|http_requests_in_progress|db_connection_pool_size|db_connection_pool_in_use|db_connection_pool_available|db_connection_pool_waiting|db_query_duration_seconds|http_client_pool_size|http_client_pool_in_use|http_client_waiting_requests|celery_tasks_total|bodam_donation_duplicate_total|bodam_payment_idempotency_key_hit_total|db_deadlocks_total)'
+        regex: '(http_requests_total|http_request_duration_seconds.*|http_request_size_bytes.*|http_response_size_bytes.*|http_requests_in_progress|db_connection_pool_size|db_connection_pool_in_use|db_connection_pool_available|db_connection_pool_waiting|db_query_duration_seconds.*|http_client_pool_size|http_client_pool_in_use|http_client_waiting_requests|celery_tasks_total|bodam_donation_duplicate_total|bodam_payment_idempotency_key_hit_total|db_deadlocks_total)'
         action: keep
-
-  # Celery worker metrics (lower frequency)
-  - job_name: 'celery-worker'
-    scrape_interval: 60s
-    static_configs:
-      - targets: ['celery-worker:8000']
-    metrics_path: '/metrics'
 
   # K6 Load Testing Metrics (via statsd-exporter)
   - job_name: 'k6-loadtest'

@@ -64,3 +64,31 @@ from src.workers import crawler, incident_pipeline, matcher, billing_processor, 
 def health_check() -> str:
     """Return simple heartbeat value for readiness probes."""
     return "ok"
+
+
+# ============================================================
+# Celery Signal Handlers - Prometheus 메트릭 자동 수집
+# ============================================================
+from celery.signals import task_success, task_failure, task_retry
+from src.api.observability import celery_tasks_total
+
+
+@task_success.connect
+def task_success_handler(sender=None, **kwargs):
+    """작업 성공 시 메트릭 증가"""
+    task_name = sender.name if sender else "unknown"
+    celery_tasks_total.labels(task_name=task_name, status="SUCCESS").inc()
+
+
+@task_failure.connect
+def task_failure_handler(sender=None, **kwargs):
+    """작업 실패 시 메트릭 증가"""
+    task_name = sender.name if sender else "unknown"
+    celery_tasks_total.labels(task_name=task_name, status="FAILURE").inc()
+
+
+@task_retry.connect
+def task_retry_handler(sender=None, **kwargs):
+    """작업 재시도 시 메트릭 증가"""
+    task_name = sender.name if sender else "unknown"
+    celery_tasks_total.labels(task_name=task_name, status="RETRY").inc()

@@ -1,0 +1,433 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: BoDam Alerts
+    folder: BoDam Production Alerts
+    interval: 1m
+    rules:
+      # 1. API 응답 속도 경고 (p95 > 300ms)
+      - uid: api_p95_warning
+        title: "API 응답 속도 느림 (p95 > 300ms)"
+        condition: B
+        data:
+          - refId: A
+            queryType: ''
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) * 1000
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            queryType: ''
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 300
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: B
+              type: threshold
+        noDataState: NoData
+        execErrState: Error
+        for: 2m
+        annotations:
+          summary: API p95 응답 속도가 300ms를 초과했습니다
+          description: 성능 저하가 감지되었습니다
+        labels:
+          severity: warning
+          component: backend
+
+      # 2. DB 커넥션 풀 고갈 (> 80%)
+      - uid: db_pool_high
+        title: "DB 커넥션 풀 사용률 높음 (> 80%)"
+        condition: B
+        data:
+          - refId: A
+            queryType: ''
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: (db_connection_pool_in_use / 10) * 100
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            queryType: ''
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 80
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: B
+              type: threshold
+        noDataState: NoData
+        execErrState: Error
+        for: 2m
+        annotations:
+          summary: DB 커넥션 풀 사용률이 80%를 초과했습니다
+          description: DB 커넥션 부족 위험이 있습니다
+        labels:
+          severity: warning
+          component: database
+
+      # 3. 중복 기부 감지 (> 5건)
+      - uid: duplicate_donation
+        title: "중복 기부 감지됨 (> 5건)"
+        condition: B
+        data:
+          - refId: A
+            queryType: ''
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: sum(increase(bodam_donation_duplicate_total[10m]))
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            queryType: ''
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 5
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: B
+              type: threshold
+        noDataState: NoData
+        execErrState: OK
+        for: 2m
+        annotations:
+          summary: 중복 기부 시도가 감지되었습니다
+          description: 최근 10분간 5건 이상의 중복 기부 발생
+        labels:
+          severity: warning
+          component: donations
+
+      # 4. Celery 실패율 높음 (> 20%)
+      - uid: celery_failure_high
+        title: "Celery 작업 실패율 높음 (> 20%)"
+        condition: B
+        data:
+          - refId: A
+            queryType: ''
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: |
+                (sum(rate(celery_tasks_total{status="FAILURE"}[10m])) / sum(rate(celery_tasks_total[10m]))) * 100
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            queryType: ''
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 20
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: B
+              type: threshold
+        noDataState: NoData
+        execErrState: OK
+        for: 3m
+        annotations:
+          summary: Celery 작업 실패율이 20%를 초과했습니다
+          description: 백그라운드 작업 확인이 필요합니다
+        labels:
+          severity: warning
+          component: celery
+
+      # 5. API 응답 속도 심각 (p95 > 1초)
+      - uid: api_p95_critical
+        title: "API 응답 속도 심각 (p95 > 1초)"
+        condition: B
+        data:
+          - refId: A
+            queryType: ''
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) * 1000
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            queryType: ''
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 1000
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: B
+              type: threshold
+        noDataState: NoData
+        execErrState: Error
+        for: 1m
+        annotations:
+          summary: API 응답 속도가 1초를 초과했습니다!
+          description: 즉시 확인이 필요합니다
+        labels:
+          severity: critical
+          component: backend
+
+      # 6. HTTP 4xx 에러율 높음 (> 10%)
+      - uid: http_4xx_high
+        title: "HTTP 4xx 에러율 높음 (> 10%)"
+        condition: B
+        data:
+          - refId: A
+            queryType: ''
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: |
+                (sum(rate(http_requests_total{status=~"4.."}[5m])) / sum(rate(http_requests_total[5m]))) * 100
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            queryType: ''
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 10
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: B
+              type: threshold
+        noDataState: NoData
+        execErrState: Error
+        for: 3m
+        annotations:
+          summary: HTTP 4xx 에러율이 10%를 초과했습니다
+          description: 클라이언트 요청 문제가 발생하고 있습니다
+        labels:
+          severity: warning
+          component: backend
+
+      # 7. HTTP 5xx 서버 에러 발생
+      - uid: http_5xx_detected
+        title: "HTTP 5xx 서버 에러 발생"
+        condition: B
+        data:
+          - refId: A
+            queryType: ''
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: sum(rate(http_requests_total{status=~"5.."}[5m]))
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            queryType: ''
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: B
+              type: threshold
+        noDataState: NoData
+        execErrState: Error
+        for: 1m
+        annotations:
+          summary: 서버 에러(5xx)가 발생했습니다!
+          description: 즉시 확인이 필요합니다
+        labels:
+          severity: critical
+          component: backend
+
+      # 8. DB 데드락 발생
+      - uid: db_deadlock_alert
+        title: "DB 데드락 발생"
+        condition: B
+        data:
+          - refId: A
+            queryType: ''
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: sum(increase(db_deadlocks_total[5m]))
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            queryType: ''
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: B
+              type: threshold
+        noDataState: NoData
+        execErrState: OK
+        for: 1m
+        annotations:
+          summary: 데이터베이스 데드락이 발생했습니다
+          description: 트랜잭션 확인이 필요합니다
+        labels:
+          severity: critical
+          component: database

@@ -152,9 +152,11 @@ services:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_USERS_ALLOW_SIGN_UP=false
+      - SLACK_BODAM_ALERT_WEBHOOK=${SLACK_BODAM_ALERT_WEBHOOK}
     volumes:
       - grafana-data:/var/lib/grafana
       - ./infra/k8s/observability/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./infra/k8s/observability/grafana-alerting.yml:/etc/grafana/provisioning/alerting/contact-points.yml:ro
     depends_on:
       prometheus:
         condition: service_healthy

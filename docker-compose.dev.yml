@@ -140,7 +140,7 @@ services:
 
       # Feature Flags
       - DEBUG=true
-      - ENABLE_RATE_LIMITING=true
+      - ENABLE_RATE_LIMITING=false
       - ENABLE_MONITORING=true
 
     ports:
@@ -312,9 +312,13 @@ services:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_USERS_ALLOW_SIGN_UP=false
+      - SLACK_BODAM_ALERT_WEBHOOK=${SLACK_BODAM_ALERT_WEBHOOK}
     volumes:
       - grafana-data:/var/lib/grafana
       - ./infra/k8s/observability/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./infra/k8s/observability/grafana-alerting.yml:/etc/grafana/provisioning/alerting/contact-points.yml:ro
+      - ./infra/k8s/observability/grafana-alert-rules.yml:/etc/grafana/provisioning/alerting/rules.yml:ro
+      - ./infra/grafana/provisioning/dashboards/dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml:ro
     depends_on:
       prometheus:
         condition: service_healthy
@@ -355,9 +359,12 @@ services:
     ports:
       - "9100:9100"
     command:
-      - '--path.rootfs=/host'
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
     volumes:
-      - /:/host:ro,rslave
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9100/metrics"]
       interval: 30s
@@ -378,9 +385,19 @@ services:
     environment:
       - K6_SCENARIO=baseline  # baseline, target, stress, spike 중 선택
       - BASE_URL=http://backend:8000
+      - TEST_TOKEN=${TEST_TOKEN:-Bearer test-token}
+      - DONATION_FIRE_STATION_ID=${DONATION_FIRE_STATION_ID:-9dc63e0c-df47-4f95-af37-cd284cf32822}
+      - DONATION_AMOUNT=${DONATION_AMOUNT:-10000}
+      - K6_VUS=${K6_VUS:-50}
+      - K6_DURATION=${K6_DURATION:-2m}
+      - PAYMENT_ORDER_ID=${PAYMENT_ORDER_ID:-}
+      - PAYMENT_KEY=${PAYMENT_KEY:-}
+      - PAYMENT_AMOUNT=${PAYMENT_AMOUNT:-10000}
+      - IDEMPOTENCY_KEY=${IDEMPOTENCY_KEY:-k6-test-fixed-key}
+      - K6_TEST_SCRIPT=${K6_TEST_SCRIPT:-k6-scenarios.js}
     volumes:
-      - ./specs/004-hybrid-observability-stack/contracts/k6-scenarios.js:/scripts/k6-scenarios.js:ro
-    command: run /scripts/k6-scenarios.js
+      - ./specs/004-hybrid-observability-stack/contracts:/scripts:ro
+    command: run /scripts/${K6_TEST_SCRIPT}
     depends_on:
       - backend
       - statsd-exporter

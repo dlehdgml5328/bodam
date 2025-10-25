@@ -1,0 +1,35 @@
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: slack-bodam-alerts
+    receivers:
+      - uid: slack-bodam-alerts
+        type: slack
+        settings:
+          url: ${SLACK_BODAM_ALERT_WEBHOOK}
+          title: "🔥 BoDam 알람"
+          text: |
+            {{ range .Alerts }}
+            *알람명:* {{ .Labels.alertname }}
+            *상태:* {{ .Status }}
+            *심각도:* {{ .Labels.severity }}
+            *요약:* {{ index .Annotations "summary" }}
+            *상세:* {{ index .Annotations "description" }}
+            *시간:* {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+            {{ end }}
+          username: BoDam Monitoring
+        disableResolveMessage: false
+
+notificationPolicies:
+  - orgId: 1
+    receiver: slack-bodam-alerts
+    group_by:
+      - alertname
+    routes:
+      - receiver: slack-bodam-alerts
+        object_matchers:
+          - ["severity", "=", "critical"]
+      - receiver: slack-bodam-alerts
+        object_matchers:
+          - ["severity", "=", "warning"]

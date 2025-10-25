@@ -15,6 +15,7 @@ from src.database.connection import get_session
 from src.integrations.toss_payments import TossPaymentsClient, TossPaymentsError
 from src.models.donation import DonationStatus
 from src.services.donation_service import DonationService
+from src.api.observability import bodam_payment_idempotency_key_hit_total
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,8 @@ async def confirm_payment(
 
         if donation.status == DonationStatus.COMPLETED:
             logger.warning("Donation already completed: %s", donation.id)
+            # 멱등성 키 히트 메트릭 증가
+            bodam_payment_idempotency_key_hit_total.inc()
             return PaymentConfirmResponse(
                 donation_id=donation.id,
                 status=donation.status,
