@@ -16,7 +16,7 @@ spec:
         - name: registry-bodam
       containers:
         - name: backend
-          image: ghcr.io/bodam/backend:latest
+          image: registry.digitalocean.com/bodam/backend:latest
           ports:
             - containerPort: 8000
           env:
@@ -24,7 +24,12 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: bodam-secrets
-                  key: database_url
+                  key: database-url
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: bodam-secrets
+                  key: jwt-secret
             - name: REDIS_CACHE_URL
               value: redis://redis-cache-service:6379/0
             - name: CELERY_BROKER_URL
