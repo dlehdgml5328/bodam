@@ -10,6 +10,7 @@ on:
     paths:
       - 'backend/**'
       - '.github/workflows/backend-ci-cd.yml'
+  workflow_dispatch:
 
 env:
   REGISTRY: registry.digitalocean.com/bodam
