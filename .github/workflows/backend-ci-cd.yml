@@ -189,7 +189,9 @@ jobs:
 
       - name: Kubernetes 인증 설정
         run: |
-          doctl kubernetes cluster kubeconfig save ${{ steps.env.outputs.cluster_id }}
+          doctl kubernetes cluster kubeconfig save ${{ steps.env.outputs.cluster_id }} || true
+          mkdir -p $HOME/.kube
+          doctl kubernetes cluster kubeconfig show ${{ steps.env.outputs.cluster_id }} > $HOME/.kube/config
 
       - name: 네임스페이스 생성 (존재하지 않는 경우)
         run: |
