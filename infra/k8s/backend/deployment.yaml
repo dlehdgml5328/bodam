@@ -12,6 +12,8 @@ spec:
       labels:
         app: bodam-backend
     spec:
+      imagePullSecrets:
+        - name: registry-bodam
       containers:
         - name: backend
           image: ghcr.io/bodam/backend:latest
