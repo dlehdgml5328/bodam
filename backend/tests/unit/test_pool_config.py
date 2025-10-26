@@ -1,6 +1,6 @@
 """연결 풀 설정 Unit Tests"""
 import pytest
-from backend.src.config import settings
+from src.config import settings
 
 
 class TestPoolConfig:

@@ -1,6 +1,6 @@
 """재시도 정책 Unit Tests"""
 import pytest
-from backend.src.integrations.retry_policy import is_excluded_domain
+from src.integrations.retry_policy import is_excluded_domain
 
 
 class TestRetryPolicyUtils:
