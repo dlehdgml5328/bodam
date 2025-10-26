@@ -5,10 +5,10 @@ Revises: 013_add_refunds_table
 Create Date: 2025-10-23
 """
 
-from alembic import op
 import sqlalchemy as sa
 from pgvector.sqlalchemy import Vector
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "014_add_knowledge_documents"

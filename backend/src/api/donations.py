@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import uuid
 from contextlib import asynccontextmanager
-from datetime import date, datetime, timezone, timedelta
-import os
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -14,6 +14,8 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.observability import bodam_donation_duplicate_total
+from src.cache.distributed_lock import LockAcquisitionError, acquire_lock
 from src.database.connection import get_session
 from src.integrations.toss_payments import TossPaymentsClient
 from src.models.donation import (
@@ -28,7 +30,7 @@ from src.models.donation import (
 )
 from src.models.refund import RefundStatus
 from src.models.user import User
-from src.security.session import get_current_user_from_bearer, get_current_user_with_csrf, get_optional_user_from_bearer
+from src.security.session import get_current_user_with_csrf, get_optional_user_from_bearer
 from src.services.donation_service import (
     AllocationSpec,
     BillingAuthorization,
@@ -41,9 +43,6 @@ from src.services.donation_service import (
     RegularDonationSpec,
 )
 from src.services.user_service import UserNotFoundError, UserService
-from src.api.observability import bodam_donation_duplicate_total
-from src.cache.distributed_lock import acquire_lock, LockAcquisitionError
-import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["donations"])
@@ -213,6 +212,7 @@ async def _resolve_fire_station_id(fire_station_id: uuid.UUID | str | None, sess
 
     # UUID가 아니면 소방서 이름으로 간주하고 검색
     from sqlalchemy import select
+
     from src.models.fire_station import FireStation
 
     result = await session.execute(
@@ -251,8 +251,9 @@ async def create_donation_checkout(
             user = await user_service.get_user_by_email(donor_email)
         except UserNotFoundError:
             # 게스트 기부용 임시 사용자 생성
-            from src.security.passwords import hash_password
             import secrets
+
+            from src.security.passwords import hash_password
             # 랜덤 패스워드 생성 (게스트는 로그인 불가)
             random_password = secrets.token_urlsafe(32)
             user = User(
@@ -357,14 +358,14 @@ async def create_donation_checkout(
                 billing_auth_url=intent.billing_auth_url,
                 subscription_id=intent.subscription.id if intent.subscription else None,
             )
-    except LockAcquisitionError:
+    except LockAcquisitionError as e:
         # 락 획득 실패 (중복 기부)
         logger.warning(f"Duplicate donation attempt (lock timeout): user={user.id}, station={fire_station_uuid}")
         bodam_donation_duplicate_total.labels(fire_station_id=str(fire_station_uuid or "unknown")).inc()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="동일한 기부가 이미 처리 중입니다. 잠시 후 다시 시도해주세요."
-        )
+        ) from e
     except HTTPException:
         raise
     except Exception as e:
@@ -378,7 +379,7 @@ async def list_recent_donations(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """공개 API: 최근 기부 내역 조회 (실시간 기부 현황용)"""
-    from sqlalchemy import select, desc
+    from sqlalchemy import desc, select
     from sqlalchemy.orm import selectinload
 
     # 완료된 기부만 최신순으로 조회 (eager loading 적용)
@@ -459,7 +460,7 @@ async def get_receipt(
     session: AsyncSession = Depends(get_session),
 ) -> Response:
     """기부 영수증 PDF 다운로드"""
-    from src.services.receipt_service import ReceiptService, ReceiptData
+    from src.services.receipt_service import ReceiptData, ReceiptService
 
     # 기부 정보 조회
     async with _payments_gateway() as gateway:

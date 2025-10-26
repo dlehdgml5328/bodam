@@ -17,9 +17,7 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 import redis.asyncio as redis
-
-from sqlalchemy import select, func
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from src.cache.clients import get_cache_client, get_semantic_client
 from src.database.connection import session_scope

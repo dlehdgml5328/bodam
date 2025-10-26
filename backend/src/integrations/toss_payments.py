@@ -85,7 +85,6 @@ class TossPaymentsClient(PaymentsGateway):
 
         # payment_url은 Frontend에서 사용할 성공/실패 redirect URL을 반환
         success = success_url or "http://localhost:3000/payment/success"
-        fail = fail_url or "http://localhost:3000/payment/fail"
 
         # Frontend SDK에서 사용할 정보를 URL 파라미터로 전달
         payment_url = f"{success}?orderId={order_id}&amount={amount}"
@@ -145,7 +144,6 @@ class TossPaymentsClient(PaymentsGateway):
 
         generated_customer_key = customer_key or f"customer_{uuid.uuid4()}"
         success = success_url or "http://localhost:3000/payment/billing-success"
-        fail = fail_url or "http://localhost:3000/payment/billing-fail"
 
         # Frontend SDK에서 사용할 정보를 auth_url로 전달
         billing_auth_url = f"{success}?customerKey={generated_customer_key}"

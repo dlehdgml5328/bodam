@@ -13,11 +13,16 @@ if sys.platform != "win32":  # Windows는 uvloop 미지원
     except ImportError:
         pass  # uvloop이 설치되지 않았으면 기본 이벤트 루프 사용
 
+import os
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 from sqladmin import Admin
 
+from .admin import register_admin_views
+from .admin.auth import AdminAuthBackend
+from .admin.config import AdminConfig
 from .api import (
     auth,
     donations,
@@ -42,23 +47,31 @@ from .api import (
 )
 from .api.admin import (
     auth as admin_auth,
+)
+from .api.admin import (
     chat as admin_chat,
+)
+from .api.admin import (
     knowledge as admin_knowledge,
+)
+from .api.admin import (
     refund_actions as admin_refund_actions,
+)
+from .api.admin import (
     refunds as admin_refunds,
+)
+from .api.admin import (
     resources as admin_resources,
+)
+from .api.admin import (
     search as admin_search,
 )
 from .api.crawler import routes as crawler
-from .admin import register_admin_views
-from .admin.auth import AdminAuthBackend
-from .admin.config import AdminConfig
 from .api.webhooks import toss
 from .database.connection import engine
 from .middleware.auth import AuthMiddleware
 from .middleware.rate_limiter import RateLimitMiddleware
 from .security_config import get_security_settings
-import os
 
 # orjson을 기본 JSON 응답 클래스로 설정 (JSON 직렬화 성능 향상)
 app = FastAPI(
@@ -100,8 +113,10 @@ app.add_middleware(
 # Add other middleware (order matters - last added runs first)
 # Prometheus metrics middleware (먼저 추가하여 모든 요청 측정)
 import time
+
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
+
 
 class PrometheusMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -115,11 +130,11 @@ class PrometheusMiddleware(BaseHTTPMiddleware):
 
         # Import metrics here to avoid circular dependency
         from .api.observability import (
-            http_requests_total,
-            http_request_duration_seconds,
-            db_connection_pool_size,
-            db_connection_pool_in_use,
             db_connection_pool_available,
+            db_connection_pool_in_use,
+            db_connection_pool_size,
+            http_request_duration_seconds,
+            http_requests_total,
         )
 
         # Record HTTP metrics

@@ -7,8 +7,8 @@ from typing import Optional
 from uuid import UUID
 
 import httpx
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.selenium_crawl_job import JobStatus, SeleniumCrawlJob
 from src.workers.selenium_crawler_worker import crawl_url

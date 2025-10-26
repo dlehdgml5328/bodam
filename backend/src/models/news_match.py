@@ -2,18 +2,20 @@
 뉴스-사고 매칭 모델
 """
 from datetime import datetime
+
 from sqlalchemy import (
     Column,
-    Integer,
-    String,
+    DateTime,
     Float,
     ForeignKey,
-    DateTime,
-    Text,
     Index,
+    Integer,
+    String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
+
 from .base import Base
 
 

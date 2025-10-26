@@ -12,15 +12,15 @@ from datetime import datetime, timedelta
 from typing import Dict, List, TypedDict
 
 from src.integrations.naver_news import NaverNewsClient
-from src.integrations.youtube import YouTubeClient
 from src.integrations.together_ai import TogetherAIHttpClient
+from src.integrations.youtube import YouTubeClient
 from src.monitoring.logging import get_logger
 
 logger = get_logger(__name__)
 
 _NEWS_CACHE: Dict[str, tuple[float, List[Dict]]] = {}
 _VIDEO_CACHE: Dict[str, tuple[float, List[Dict]]] = {}
-_CACHE_TTL = int(os.getenv('MATCH_CACHE_TTL_SECONDS', '1800'))
+_CACHE_TTL = int(os.getenv("MATCH_CACHE_TTL_SECONDS", "1800"))
 _EVALUATION_CACHE: Dict[str, Dict] = {}
 
 
@@ -47,7 +47,7 @@ async def extract_keywords_node(state: MatcherState) -> MatcherState:
     keywords = []
 
     # 주소에서 지역 추출
-    address = incident.get('address', '')
+    address = incident.get("address", "")
     address_parts = address.split()
 
     if len(address_parts) >= 2:
@@ -87,10 +87,10 @@ async def search_news_node(state: MatcherState) -> MatcherState:
             state["news_results"] = copy.deepcopy(cache_entry[1])
             return state
 
-        occurrence_date = incident.get('occurrenceDate', '')
+        occurrence_date = incident.get("occurrenceDate", "")
         if occurrence_date:
             try:
-                incident_date = datetime.strptime(occurrence_date, '%Y-%m-%d')
+                incident_date = datetime.strptime(occurrence_date, "%Y-%m-%d")
                 if datetime.utcnow() - incident_date > timedelta(days=5):
                     logger.info("[Node] Incident older than 5 days, skipping news search")
                     state["news_results"] = []
@@ -99,8 +99,8 @@ async def search_news_node(state: MatcherState) -> MatcherState:
                 logger.debug("[Node] Unable to parse occurrence date '%s'", occurrence_date)
 
         naver_client = NaverNewsClient(
-            client_id=os.getenv('NAVER_CLIENT_ID', 'Le3v_zRXPEpKCD8hE_ei'),
-            client_secret=os.getenv('NAVER_CLIENT_SECRET', 'g3Gcw_ACuH')
+            client_id=os.getenv("NAVER_CLIENT_ID", "Le3v_zRXPEpKCD8hE_ei"),
+            client_secret=os.getenv("NAVER_CLIENT_SECRET", "g3Gcw_ACuH")
         )
 
         if occurrence_date:
@@ -144,16 +144,16 @@ async def search_videos_node(state: MatcherState) -> MatcherState:
         state["video_results"] = []
         return state
 
-    severity = incident.get('severity', 'low')
-    if severity not in ('medium', 'high'):
+    severity = incident.get("severity", "low")
+    if severity not in ("medium", "high"):
         logger.info("[Node] Severity=%s, skipping video search", severity)
         state["video_results"] = []
         return state
 
-    occurrence_date = incident.get('occurrenceDate', '')
+    occurrence_date = incident.get("occurrenceDate", "")
     if occurrence_date:
         try:
-            if datetime.utcnow() - datetime.strptime(occurrence_date, '%Y-%m-%d') > timedelta(days=5):
+            if datetime.utcnow() - datetime.strptime(occurrence_date, "%Y-%m-%d") > timedelta(days=5):
                 logger.info("[Node] Incident older than 5 days, skipping video search")
                 state["video_results"] = []
                 return state
@@ -172,10 +172,10 @@ async def search_videos_node(state: MatcherState) -> MatcherState:
             return state
 
         youtube_client = YouTubeClient(
-            api_key=os.getenv('YOUTUBE_API_KEY', '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')
+            api_key=os.getenv("YOUTUBE_API_KEY", "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")
         )
 
-        search_start = (datetime.utcnow() - timedelta(days=7)).strftime('%Y-%m-%dT%H:%M:%SZ')
+        search_start = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
         logger.info(f"[Node] Searching videos published after: {search_start} (7 days range)")
 
         video_results = youtube_client.search(
@@ -220,16 +220,16 @@ async def evaluate_relevance_node(state: MatcherState) -> MatcherState:
         return state
 
     try:
-        incident_id = incident.get('id', '')
-        news_signature = tuple(sorted((item.get('url') or item.get('title', '')) for item in news_results))
-        video_signature = tuple(sorted((item.get('url') or item.get('title', '')) for item in video_results))
+        incident_id = incident.get("id", "")
+        news_signature = tuple(sorted((item.get("url") or item.get("title", "")) for item in news_results))
+        video_signature = tuple(sorted((item.get("url") or item.get("title", "")) for item in video_results))
         cache_key = f"{incident_id}:{hash(news_signature)}:{hash(video_signature)}"
 
         cache_entry = _EVALUATION_CACHE.get(cache_key)
-        if cache_entry and time.time() - cache_entry['ts'] < _CACHE_TTL:
+        if cache_entry and time.time() - cache_entry["ts"] < _CACHE_TTL:
             logger.info("[Node] Using cached evaluation for incident %s", incident_id)
-            state["evaluated_news"] = copy.deepcopy(cache_entry['news'])
-            state["evaluated_videos"] = copy.deepcopy(cache_entry['videos'])
+            state["evaluated_news"] = copy.deepcopy(cache_entry["news"])
+            state["evaluated_videos"] = copy.deepcopy(cache_entry["videos"])
             return state
 
         together_client = TogetherAIHttpClient()
@@ -302,13 +302,13 @@ async def save_matches_node(state: MatcherState) -> MatcherState:
     """
     5단계: DB 저장 (news_matches 테이블)
     """
-    from sqlalchemy.ext.asyncio import AsyncSession
-    from src.database.connection import get_session
-    from src.models.news_match import NewsMatch
     from datetime import datetime
 
+    from src.database.connection import get_session
+    from src.models.news_match import NewsMatch
+
     incident = state["incident"]
-    incident_id = incident.get('id')
+    incident_id = incident.get("id")
     evaluated_news = state["evaluated_news"]
     evaluated_videos = state["evaluated_videos"]
 
@@ -318,16 +318,15 @@ async def save_matches_node(state: MatcherState) -> MatcherState:
         # AsyncSession 생성
         async for session in get_session():
             from sqlalchemy import select
-            from sqlalchemy.dialects.postgresql import insert
 
             # 뉴스 저장 (upsert)
             for news in evaluated_news:
                 # Naver pubDate 파싱: "Thu, 02 Oct 2025 14:48:00 +0900"
                 published_at = None
-                if news.get('publishedAt'):
+                if news.get("publishedAt"):
                     try:
                         published_at = datetime.strptime(
-                            news['publishedAt'],
+                            news["publishedAt"],
                             "%a, %d %b %Y %H:%M:%S %z"
                         )
                     except Exception as e:
@@ -336,8 +335,8 @@ async def save_matches_node(state: MatcherState) -> MatcherState:
                 # 중복 체크 후 insert
                 stmt = select(NewsMatch).where(
                     NewsMatch.incident_id == incident_id,
-                    NewsMatch.news_type == 'news',
-                    NewsMatch.news_id == news.get('url', '')
+                    NewsMatch.news_type == "news",
+                    NewsMatch.news_id == news.get("url", "")
                 )
                 result = await session.execute(stmt)
                 existing = result.scalar_one_or_none()
@@ -345,13 +344,13 @@ async def save_matches_node(state: MatcherState) -> MatcherState:
                 if not existing:
                     news_match = NewsMatch(
                         incident_id=incident_id,
-                        news_type='news',
-                        news_id=news.get('url', ''),
-                        title=news.get('title', ''),
-                        url=news.get('url', ''),
+                        news_type="news",
+                        news_id=news.get("url", ""),
+                        title=news.get("title", ""),
+                        url=news.get("url", ""),
                         published_at=published_at,
                         thumbnail_url=None,
-                        similarity_score=news.get('relevance_score', 0.0)
+                        similarity_score=news.get("relevance_score", 0.0)
                     )
                     session.add(news_match)
 
@@ -359,21 +358,21 @@ async def save_matches_node(state: MatcherState) -> MatcherState:
             for video in evaluated_videos:
                 # YouTube publishedAt 파싱: "2025-10-02T14:48:00Z"
                 published_at = None
-                if video.get('publishedAt'):
+                if video.get("publishedAt"):
                     try:
                         published_at = datetime.fromisoformat(
-                            video['publishedAt'].replace('Z', '+00:00')
+                            video["publishedAt"].replace("Z", "+00:00")
                         )
                     except Exception as e:
                         logger.warning(f"[Node] Failed to parse video date: {e}")
 
                 # YouTube API는 'id' 키를 사용
-                video_id = video.get('id', video.get('videoId', ''))
+                video_id = video.get("id", video.get("videoId", ""))
 
                 # 중복 체크 후 insert
                 stmt = select(NewsMatch).where(
                     NewsMatch.incident_id == incident_id,
-                    NewsMatch.news_type == 'video',
+                    NewsMatch.news_type == "video",
                     NewsMatch.news_id == video_id
                 )
                 result = await session.execute(stmt)
@@ -382,13 +381,13 @@ async def save_matches_node(state: MatcherState) -> MatcherState:
                 if not existing:
                     video_match = NewsMatch(
                         incident_id=incident_id,
-                        news_type='video',
+                        news_type="video",
                         news_id=video_id,
-                        title=video.get('title', ''),
+                        title=video.get("title", ""),
                         url=f"https://www.youtube.com/watch?v={video_id}",
                         published_at=published_at,
-                        thumbnail_url=video.get('thumbnail', ''),
-                        similarity_score=video.get('relevance_score', 0.0)
+                        thumbnail_url=video.get("thumbnail", ""),
+                        similarity_score=video.get("relevance_score", 0.0)
                     )
                     session.add(video_match)
 

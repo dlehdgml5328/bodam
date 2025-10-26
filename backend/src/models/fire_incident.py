@@ -1,18 +1,20 @@
 """
 화재 사고 정보 모델
 """
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
+
 from sqlalchemy import (
-    Column,
-    String,
-    Integer,
     BigInteger,
-    Float,
-    Text,
+    Column,
     DateTime,
+    Float,
     Index,
+    Integer,
+    String,
+    Text,
 )
 from sqlalchemy.orm import relationship
+
 from .base import Base
 
 # 한국 시간대 (KST = UTC+9)

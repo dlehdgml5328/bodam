@@ -14,17 +14,18 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+from passlib.context import CryptContext
 from sqlalchemy import select
+
 from src.database.connection import get_db_session
 from src.models.user import User, UserRole
-from passlib.context import CryptContext
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 async def create_admin_user(email: str, name: str, password: str = "admin1234"):
     """관리자 계정 생성"""
-    print(f"🔐 관리자 계정 생성 중...")
+    print("🔐 관리자 계정 생성 중...")
     print(f"  Email: {email}")
     print(f"  Name: {name}")
     print(f"  Password: {password}")
@@ -38,7 +39,7 @@ async def create_admin_user(email: str, name: str, password: str = "admin1234"):
         if existing_user:
             print(f"⚠️  이미 존재하는 사용자입니다: {email}")
             response = input("기존 사용자를 관리자로 업데이트하시겠습니까? (y/N): ")
-            if response.lower() != 'y':
+            if response.lower() != "y":
                 print("취소되었습니다.")
                 return
 
@@ -47,7 +48,7 @@ async def create_admin_user(email: str, name: str, password: str = "admin1234"):
             existing_user.name = name
             existing_user.hashed_password = pwd_context.hash(password)
             await session.commit()
-            print(f"✅ 기존 사용자를 관리자로 업데이트했습니다!")
+            print("✅ 기존 사용자를 관리자로 업데이트했습니다!")
         else:
             # 새 관리자 생성
             admin_user = User(
@@ -60,7 +61,7 @@ async def create_admin_user(email: str, name: str, password: str = "admin1234"):
             )
             session.add(admin_user)
             await session.commit()
-            print(f"✅ 새로운 관리자 계정이 생성되었습니다!")
+            print("✅ 새로운 관리자 계정이 생성되었습니다!")
 
     print()
     print("=" * 50)

@@ -7,8 +7,6 @@ from typing import Literal
 from urllib.parse import urlencode
 
 import httpx
-from fastapi import HTTPException, status
-
 
 SocialProvider = Literal["naver", "google", "kakao"]
 

@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import secrets
 import uuid
-from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,23 +21,23 @@ from src.security.session import (
     issue_session_tokens,
 )
 from src.security_config import get_security_settings
+from src.services.oauth_service import OAuthError, OAuthService, SocialProvider
 from src.services.password_reset_service import (
     PasswordResetService,
     PasswordResetTokenExpiredError,
     PasswordResetTokenNotFoundError,
 )
 from src.services.refresh_token_service import (
-    RefreshTokenService,
     RefreshTokenExpiredError,
-    RefreshTokenRevokedError,
     RefreshTokenNotFoundError,
+    RefreshTokenRevokedError,
+    RefreshTokenService,
 )
 from src.services.user_service import (
     UserAlreadyExistsError,
     UserNotFoundError,
     UserService,
 )
-from src.services.oauth_service import OAuthService, OAuthError, SocialProvider
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -173,21 +172,21 @@ async def refresh(
         tokens = await issue_session_tokens(response, user, session)
         return tokens
 
-    except RefreshTokenNotFoundError:
+    except RefreshTokenNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="INVALID_REFRESH_TOKEN"
-        )
-    except RefreshTokenExpiredError:
+        ) from e
+    except RefreshTokenExpiredError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="REFRESH_TOKEN_EXPIRED"
-        )
-    except RefreshTokenRevokedError:
+        ) from e
+    except RefreshTokenRevokedError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="REFRESH_TOKEN_REVOKED"
-        )
+        ) from e
 
 
 @router.post("/password-reset/request")
@@ -249,7 +248,7 @@ async def social_login(provider: SocialProvider) -> dict[str, str]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc)
-        )
+        ) from exc
 
 
 @router.post("/social/{provider}/callback")
@@ -329,7 +328,7 @@ async def social_callback(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"OAuth 인증 실패: {str(exc)}"
-        )
+        ) from exc
 
 
 @router.get("/me")

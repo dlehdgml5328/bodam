@@ -4,14 +4,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import func, select, distinct
+from sqlalchemy import distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.connection import get_session
 from src.models.donation import Donation
-from src.models.fire_station import FireStation
 from src.models.group import Group
-from src.models.user import User
 
 router = APIRouter(prefix="/stats", tags=["stats"])
 

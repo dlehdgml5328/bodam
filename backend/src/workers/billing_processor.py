@@ -9,6 +9,7 @@ from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
 from src.integrations.toss_payments import TossPaymentsClient
 from src.models.donation import (
     Donation,
@@ -161,7 +162,6 @@ async def _request_billing_payment(
     order_name: str,
 ) -> dict:
     """Toss Billing API로 결제 요청"""
-    import httpx
 
     url = f"{toss_client._settings.base_url}/v1/billing/{billing_key}"
     payload = {

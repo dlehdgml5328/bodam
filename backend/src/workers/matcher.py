@@ -4,23 +4,21 @@
 크롤링된 화재 출동 데이터를 기반으로
 네이버 뉴스와 YouTube 영상을 검색하여 Llama 3.3으로 관련성 평가
 """
+from datetime import datetime
 from typing import Dict
 
 from celery import shared_task
-from typing import Dict
-from datetime import datetime
-import json
-from langgraph.graph import StateGraph, END
+from langgraph.graph import END, StateGraph
+
+from src.monitoring.logging import get_logger
 from src.workers.langgraph_nodes import (
     MatcherState,
+    evaluate_relevance_node,
     extract_keywords_node,
+    save_matches_node,
     search_news_node,
     search_videos_node,
-    evaluate_relevance_node,
-    save_matches_node
 )
-from src.cache.clients import get_cache_client
-from src.monitoring.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -63,12 +61,11 @@ async def _run_matcher(incident: Dict):
     Args:
         incident: 화재 출동 데이터
     """
-    incident_id = incident.get('id')
+    incident_id = incident.get("id")
     logger.info(f"[Matcher] Starting LangGraph match for incident: {incident_id}")
 
     # 발생 날짜 확인 (7일 이상 지난 화재는 건너뛰기 - 개선: 2일 → 7일)
-    from datetime import datetime, timedelta
-    occurrence_date = incident.get('occurrenceDate', '')
+    occurrence_date = incident.get("occurrenceDate", "")
     if occurrence_date:
         try:
             occurrence_dt = datetime.fromisoformat(occurrence_date)
@@ -88,6 +85,7 @@ async def _run_matcher(incident: Dict):
     # 이미 매칭된 사고인지 확인 (API 호출 절감)
     try:
         from sqlalchemy import select
+
         from src.database.connection import get_session
         from src.models.news_match import NewsMatch
 
@@ -142,8 +140,8 @@ async def _run_matcher(incident: Dict):
         # DB에 저장되었으므로 Redis는 스킵 (API가 DB를 먼저 확인함)
         return {
             "incident_id": incident_id,
-            "news_count": len(final_state['evaluated_news']),
-            "video_count": len(final_state['evaluated_videos'])
+            "news_count": len(final_state["evaluated_news"]),
+            "video_count": len(final_state["evaluated_videos"])
         }
 
     except Exception as e:
@@ -208,8 +206,10 @@ def retry_failed_matches(max_age_days: int = 7):
 
 async def _retry_failed_matches_async(max_age_days: int) -> Dict:
     """재매칭 로직 (비동기)"""
-    from datetime import datetime, timedelta
-    from sqlalchemy import select, func, and_
+    from datetime import timedelta
+
+    from sqlalchemy import func, select
+
     from src.database.connection import session_scope
     from src.models.news_match import NewsMatch
 
@@ -226,7 +226,7 @@ async def _retry_failed_matches_async(max_age_days: int) -> Dict:
         # 모든 화재 사고 조회 (간단하게 - 실제로는 incidents 테이블에서 가져와야 함)
         # 여기서는 news_matches 테이블에서 매칭 수를 확인
         stmt = (
-            select(NewsMatch.incident_id, func.count(NewsMatch.id).label('match_count'))
+            select(NewsMatch.incident_id, func.count(NewsMatch.id).label("match_count"))
             .where(NewsMatch.created_at >= cutoff_date)
             .group_by(NewsMatch.incident_id)
             .having(func.count(NewsMatch.id) < 2)  # 매칭이 2개 미만
@@ -243,8 +243,8 @@ async def _retry_failed_matches_async(max_age_days: int) -> Dict:
                 # 실제로는 incidents 테이블에서 전체 정보를 가져와야 함
                 # 여기서는 간단하게 incident_id만 사용
                 incident_data = {
-                    'id': incident_id,
-                    'occurrenceDate': (datetime.now() - timedelta(days=1)).isoformat(),  # 임시
+                    "id": incident_id,
+                    "occurrenceDate": (datetime.now() - timedelta(days=1)).isoformat(),  # 임시
                     # 실제로는 DB에서 조회한 전체 데이터 사용
                 }
 
@@ -260,7 +260,7 @@ async def _retry_failed_matches_async(max_age_days: int) -> Dict:
                 # 비동기로 매칭 실행
                 result = await _run_matcher(incident_data)
 
-                if result.get('skipped'):
+                if result.get("skipped"):
                     skipped += 1
                 else:
                     retried += 1
@@ -279,8 +279,8 @@ async def _retry_failed_matches_async(max_age_days: int) -> Dict:
     )
 
     return {
-        'retried': retried,
-        'skipped': skipped,
-        'failed': failed,
-        'total_candidates': len(low_match_incidents) if 'low_match_incidents' in locals() else 0
+        "retried": retried,
+        "skipped": skipped,
+        "failed": failed,
+        "total_candidates": len(low_match_incidents) if "low_match_incidents" in locals() else 0
     }

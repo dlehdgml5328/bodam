@@ -9,7 +9,6 @@ import sqlalchemy as sa
 
 from alembic import op
 
-
 # revision identifiers, used by Alembic.
 revision = "012_add_fcm_token"
 down_revision = "011_add_user_id_number"

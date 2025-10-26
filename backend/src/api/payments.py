@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import uuid
 from decimal import Decimal
 
@@ -11,11 +10,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.observability import bodam_payment_idempotency_key_hit_total
 from src.database.connection import get_session
 from src.integrations.toss_payments import TossPaymentsClient, TossPaymentsError
 from src.models.donation import DonationStatus
 from src.services.donation_service import DonationService
-from src.api.observability import bodam_payment_idempotency_key_hit_total
 
 logger = logging.getLogger(__name__)
 

@@ -12,7 +12,6 @@ from typing import Any, Dict
 from uuid import uuid4
 
 from sqlalchemy import CheckConstraint, Column, Integer, String, Text
-from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import relationship

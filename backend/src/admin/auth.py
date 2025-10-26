@@ -15,8 +15,8 @@ from src.models.user import UserRole
 from src.security.passwords import verify_password
 from src.security.session import (
     SESSION_COOKIE_NAME,
-    issue_session_tokens,
     clear_session_cookies,
+    issue_session_tokens,
 )
 from src.security.tokens import TokenDecodeError, decode_access_token
 from src.services.user_service import UserNotFoundError, UserService

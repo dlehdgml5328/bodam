@@ -77,7 +77,7 @@ class RefreshTokenService:
         token = result.scalar_one_or_none()
 
         if token is None:
-            raise RefreshTokenNotFoundError(f"Token not found")
+            raise RefreshTokenNotFoundError("Token not found")
 
         return token
 

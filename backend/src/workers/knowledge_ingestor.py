@@ -8,7 +8,6 @@ PDF, Markdown, 텍스트 문서를 읽어서 청크로 분할하고
 from __future__ import annotations
 
 import hashlib
-import os
 import uuid
 from datetime import datetime
 from pathlib import Path

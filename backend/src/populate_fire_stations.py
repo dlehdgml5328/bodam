@@ -2,36 +2,37 @@
 fire_incidents 데이터에서 소방서 정보를 추출하여 fire_stations 테이블에 삽입하는 스크립트
 """
 import asyncio
+import os
 import re
 import uuid
-from sqlalchemy import select, text
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-import os
 
 
 def extract_region(address: str) -> tuple[str, str]:
     """주소에서 시/도와 시/군/구 추출"""
     # 시/도 추출
     region_match = re.match(
-        r'^(서울특별시|부산광역시|대구광역시|인천광역시|광주광역시|대전광역시|울산광역시|세종특별자치시|경기도|강원특별자치도|충청북도|충청남도|전북특별자치도|전라남도|경상북도|경상남도|제주특별자치도)',
+        r"^(서울특별시|부산광역시|대구광역시|인천광역시|광주광역시|대전광역시|울산광역시|세종특별자치시|경기도|강원특별자치도|충청북도|충청남도|전북특별자치도|전라남도|경상북도|경상남도|제주특별자치도)",
         address
     )
-    region = region_match.group(1) if region_match else '기타'
+    region = region_match.group(1) if region_match else "기타"
 
     # 시도명 단순화
-    region = region.replace('특별시', '').replace('광역시', '').replace('특별자치시', '').replace('특별자치도', '').replace('도', '')
+    region = region.replace("특별시", "").replace("광역시", "").replace("특별자치시", "").replace("특별자치도", "").replace("도", "")
 
     # 시/군/구 추출
-    district_match = re.search(r'\s+([가-힣]+시|[가-힣]+군|[가-힣]+구)', address)
-    district = district_match.group(1) if district_match else ''
+    district_match = re.search(r"\s+([가-힣]+시|[가-힣]+군|[가-힣]+구)", address)
+    district = district_match.group(1) if district_match else ""
 
     return region, district
 
 
 async def main():
     # 데이터베이스 연결
-    database_url = os.getenv('DATABASE_URL', 'postgresql+asyncpg://bodam:bodam@db:5432/bodam')
+    database_url = os.getenv("DATABASE_URL", "postgresql+asyncpg://bodam:bodam@db:5432/bodam")
     engine = create_async_engine(database_url, echo=True)
 
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -104,7 +105,7 @@ async def main():
 
         await session.commit()
 
-        print(f"\n=== Summary ===")
+        print("\n=== Summary ===")
         print(f"Total unique stations: {len(incidents)}")
         print(f"Inserted: {inserted_count}")
         print(f"Skipped: {skipped_count}")

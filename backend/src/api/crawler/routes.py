@@ -10,12 +10,9 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
 
-from src.database.connection import get_db
-from src.models.selenium_crawl_job import SeleniumCrawlJob, JobStatus
-from src.models.crawled_content import CrawledContent
 from src.api.crawler.schemas import (
     CrawledContentResponse,
     CrawlJobDetailResponse,
@@ -23,7 +20,7 @@ from src.api.crawler.schemas import (
     CrawlJobResponse,
     CreateCrawlJobRequest,
 )
-from src.database.connection import get_session
+from src.database.connection import get_db
 from src.models.crawled_content import CrawledContent
 from src.models.selenium_crawl_job import JobStatus, SeleniumCrawlJob
 from src.workers.selenium_crawler_worker import crawl_url
@@ -84,8 +81,8 @@ async def list_crawl_jobs(
         try:
             job_status = JobStatus(status)
             query = query.where(SeleniumCrawlJob.status == job_status)
-        except ValueError:
-            raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid status: {status}") from e
 
     # Get total count
     count_query = select(func.count()).select_from(query.subquery())

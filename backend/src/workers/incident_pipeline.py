@@ -6,15 +6,16 @@
 2. matcher 워커를 호출하여 뉴스 매칭 시작
 3. 신규 화재 발생 시 FCM 푸시 알림 전송
 """
+from datetime import datetime
+from typing import Any, Dict
+
 from celery import shared_task
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any
 from sqlalchemy import select
 
 from src.database.connection import session_scope
+from src.integrations.firebase_messaging import firebase_service
 from src.models.fire_incident import FireIncident, kst_now
 from src.models.user import User
-from src.integrations.firebase_messaging import firebase_service
 from src.monitoring.logging import get_logger
 
 logger = get_logger(__name__)
@@ -49,16 +50,16 @@ def save_and_match_incident(self, incident_data: Dict[str, Any]):
     try:
         async def _save():
             async with session_scope() as session:
-                incident_id = incident_data.get('id')
+                incident_id = incident_data.get("id")
 
                 # 발생 시간 합성 (한국 시간으로)
-                occurrence_date = incident_data.get('occurrenceDate', '')
-                occurrence_time = incident_data.get('occurrenceTime', '00:00')
+                occurrence_date = incident_data.get("occurrenceDate", "")
+                occurrence_time = incident_data.get("occurrenceTime", "00:00")
                 occurred_at_str = f"{occurrence_date} {occurrence_time}:00"
 
                 try:
                     # ISO 형식으로 파싱 후 KST 적용
-                    naive_dt = datetime.fromisoformat(occurred_at_str.replace(' ', 'T'))
+                    naive_dt = datetime.fromisoformat(occurred_at_str.replace(" ", "T"))
                     from src.models.fire_incident import KST
                     occurred_at = naive_dt.replace(tzinfo=KST)
                 except ValueError:
@@ -66,25 +67,25 @@ def save_and_match_incident(self, incident_data: Dict[str, Any]):
 
                 # 상태 매핑
                 status_map = {
-                    'A': 'dispatching',  # 출동중
-                    'B': 'suppressing',  # 진압중
-                    'C': 'contained',    # 진압완료
-                    'D': 'resolved'      # 귀소
+                    "A": "dispatching",  # 출동중
+                    "B": "suppressing",  # 진압중
+                    "C": "contained",    # 진압완료
+                    "D": "resolved"      # 귀소
                 }
-                status = status_map.get(incident_data.get('status', 'D'), 'resolved')
+                status = status_map.get(incident_data.get("status", "D"), "resolved")
 
                 # 심각도 판단 (사상자 또는 피해액 기준)
-                casualties = incident_data.get('casualties', 0) + incident_data.get('injured', 0)
-                damage = incident_data.get('damageAmount', 0)
+                casualties = incident_data.get("casualties", 0) + incident_data.get("injured", 0)
+                damage = incident_data.get("damageAmount", 0)
 
                 if casualties >= 10 or damage >= 1000000000:  # 10억원 이상
-                    severity = 'critical'
+                    severity = "critical"
                 elif casualties >= 5 or damage >= 500000000:  # 5억원 이상
-                    severity = 'high'
+                    severity = "high"
                 elif casualties >= 1 or damage >= 100000000:  # 1억원 이상
-                    severity = 'medium'
+                    severity = "medium"
                 else:
-                    severity = 'low'
+                    severity = "low"
 
                 # 기존 사고 확인
                 stmt = select(FireIncident).where(FireIncident.id == incident_id)
@@ -96,9 +97,9 @@ def save_and_match_incident(self, incident_data: Dict[str, Any]):
                 if existing:
                     # 업데이트
                     existing.status = status
-                    existing.casualties_injured = incident_data.get('casualties', 0)
-                    existing.casualties_dead = incident_data.get('injured', 0)  # 주의: injured가 실제로는 dead일 수 있음
-                    existing.estimated_damage = incident_data.get('damageAmount')
+                    existing.casualties_injured = incident_data.get("casualties", 0)
+                    existing.casualties_dead = incident_data.get("injured", 0)  # 주의: injured가 실제로는 dead일 수 있음
+                    existing.estimated_damage = incident_data.get("damageAmount")
                     existing.severity = severity
                     existing.updated_at = kst_now()
 
@@ -107,16 +108,16 @@ def save_and_match_incident(self, incident_data: Dict[str, Any]):
                     # 신규 생성
                     incident = FireIncident(
                         id=incident_id,
-                        title=incident_data.get('fireName', ''),
-                        location_address=incident_data.get('address', ''),
-                        latitude=incident_data.get('axisY'),
-                        longitude=incident_data.get('axisX'),
+                        title=incident_data.get("fireName", ""),
+                        location_address=incident_data.get("address", ""),
+                        latitude=incident_data.get("axisY"),
+                        longitude=incident_data.get("axisX"),
                         occurred_at=occurred_at,
                         status=status,
                         severity=severity,
-                        casualties_injured=incident_data.get('casualties', 0),
-                        casualties_dead=incident_data.get('injured', 0),
-                        estimated_damage=incident_data.get('damageAmount'),
+                        casualties_injured=incident_data.get("casualties", 0),
+                        casualties_dead=incident_data.get("injured", 0),
+                        estimated_damage=incident_data.get("damageAmount"),
                         source_url=None,
                     )
 
@@ -148,7 +149,7 @@ def save_and_match_incident(self, incident_data: Dict[str, Any]):
                     tokens = [user.fcm_token for user in users if user.fcm_token]
 
                     if tokens:
-                        fire_station = data.get('fireName', '').replace('소방서', '')
+                        fire_station = data.get("fireName", "").replace("소방서", "")
                         title = "🚨 화재 발생 알림"
                         body = f"{data.get('address', '알 수 없음')}에서 화재가 발생했습니다. {fire_station}소방서 출동 중"
                         url = "/donations"
@@ -163,7 +164,7 @@ def save_and_match_incident(self, incident_data: Dict[str, Any]):
                                 "incident_id": incident_id,
                                 "type": "fire_incident",
                                 "fire_station": fire_station,
-                                "address": data.get('address', '')
+                                "address": data.get("address", "")
                             }
                         )
 
@@ -173,7 +174,7 @@ def save_and_match_incident(self, incident_data: Dict[str, Any]):
 
         # 뉴스 매칭 워커 호출 (Together AI Rate Limit 회피를 위해 10초 지연)
         from src.workers.matcher import match_news_and_videos
-        match_news_and_videos.apply_async((incident_data,), countdown=10, queue='news_matching')
+        match_news_and_videos.apply_async((incident_data,), countdown=10, queue="news_matching")
 
         logger.info(f"[Pipeline] Successfully saved and queued matching for {incident_id} (delayed 10s)")
 
@@ -185,4 +186,4 @@ def save_and_match_incident(self, incident_data: Dict[str, Any]):
 
     except Exception as e:
         logger.error(f"[Pipeline] Failed to save incident: {e}", exc_info=True)
-        raise self.retry(exc=e)
+        raise self.retry(exc=e) from e

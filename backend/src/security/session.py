@@ -13,8 +13,8 @@ from src.database.connection import get_session
 from src.models.user import User
 from src.security.tokens import TokenDecodeError, create_access_token, decode_access_token
 from src.security_config import get_security_settings
-from src.services.user_service import UserNotFoundError, UserService
 from src.services.refresh_token_service import RefreshTokenService
+from src.services.user_service import UserNotFoundError, UserService
 
 SESSION_COOKIE_NAME: Final[str] = "bodam_session"
 CSRF_COOKIE_NAME: Final[str] = "bodam_csrf"

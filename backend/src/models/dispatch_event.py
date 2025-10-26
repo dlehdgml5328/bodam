@@ -2,18 +2,19 @@
 출동 이벤트 모델
 """
 from datetime import datetime
-from uuid import UUID
+
 from sqlalchemy import (
     Column,
+    DateTime,
+    ForeignKey,
+    Index,
     Integer,
     String,
-    ForeignKey,
-    DateTime,
     Text,
-    Index,
 )
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import relationship
+
 from .base import Base
 
 

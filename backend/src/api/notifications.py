@@ -2,8 +2,8 @@
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
 
 from src.database.connection import get_session
 from src.models.user import User
@@ -40,7 +40,7 @@ async def save_fcm_token(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to save FCM token: {str(e)}"
-        )
+        ) from e
 
 
 @router.delete("/notifications/fcm-token")
@@ -65,4 +65,4 @@ async def delete_fcm_token(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete FCM token: {str(e)}"
-        )
+        ) from e

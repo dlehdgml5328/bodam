@@ -5,11 +5,8 @@ Revises: 014_add_knowledge_documents
 Create Date: 2025-10-23 14:00:00.000000
 
 """
-import sqlalchemy as sa
-from pgvector.sqlalchemy import Vector
 
 from alembic import op
-
 
 # revision identifiers, used by Alembic.
 revision = "015_update_embedding_dimension"

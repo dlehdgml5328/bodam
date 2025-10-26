@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import sqlalchemy as sa
-from alembic import op
-from sqlalchemy.engine.reflection import Inspector
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.engine.reflection import Inspector
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "009_merge_crawler_pipeline"

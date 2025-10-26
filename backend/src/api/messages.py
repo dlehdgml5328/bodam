@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timezone, timedelta
+from datetime import timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -39,7 +39,7 @@ async def list_messages(
         .join(FireStation, Donation.fire_station_id == FireStation.id)
         .where(Donation.message.isnot(None))
         .where(Donation.message != "")
-        .where(Donation.is_anonymous == False)
+        .where(Donation.is_anonymous.is_(False))
         .order_by(Donation.created_at.desc())
         .limit(limit)
     )

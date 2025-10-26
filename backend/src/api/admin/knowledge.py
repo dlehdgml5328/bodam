@@ -9,15 +9,14 @@ from __future__ import annotations
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select, delete, func
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete, func, select
 
 from src.database.connection import session_scope
 from src.models.knowledge_document import KnowledgeDocument
 from src.monitoring.logging import get_logger
-from src.workers.knowledge_ingestor import ingest_file_task, ingest_directory_task
+from src.workers.knowledge_ingestor import ingest_directory_task, ingest_file_task
 
 logger = get_logger(__name__)
 
@@ -235,7 +234,6 @@ async def ingest_documents(request: IngestRequest) -> IngestResponse:
     ```
     """
     try:
-        import os
         from pathlib import Path
 
         path = Path(request.path)
@@ -396,9 +394,10 @@ async def embed_all_documents() -> EmbedAllResponse:
     ```
     """
     try:
-        from pathlib import Path
-        from src.workers.knowledge_ingestor import DocumentIngestor
         import hashlib
+        from pathlib import Path
+
+        from src.workers.knowledge_ingestor import DocumentIngestor
 
         knowledge_dir = Path("/app/knowledge_docs")
 

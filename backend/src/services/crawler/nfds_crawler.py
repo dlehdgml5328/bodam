@@ -7,20 +7,20 @@ Selenium을 사용하여 JavaScript 렌더링된 데이터 수집
 from __future__ import annotations
 
 import logging
-import time
 import re
-from typing import List, Dict, Any, Optional
+import time
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import (
-    TimeoutException,
     NoSuchElementException,
+    TimeoutException,
     WebDriverException,
 )
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
 
 from src.services.crawler.webdriver_pool import driver_pool
 
@@ -184,14 +184,14 @@ class NFDSCrawler:
             status = cells[6].text.strip()
 
             # 데이터 검증 (빈 행 스킵)
-            if not fire_name or fire_name == '-':
+            if not fire_name or fire_name == "-":
                 return None
 
             # 날짜/시간 파싱
             # NFDS는 "09:10" 형식으로만 제공하므로 오늘 날짜 사용
             today = datetime.now()
             occurrence_date = today.strftime("%Y-%m-%d")
-            occurrence_time = occurrence_time_raw if occurrence_time_raw != '-' else "00:00"
+            occurrence_time = occurrence_time_raw if occurrence_time_raw != "-" else "00:00"
 
             # 사망자 수 파싱
             deaths = self._parse_number(deaths_raw)
@@ -246,16 +246,16 @@ class NFDSCrawler:
         Returns:
             int: 파싱된 숫자 (파싱 실패 시 0)
         """
-        if not text or text == '-':
+        if not text or text == "-":
             return 0
 
         try:
             # 숫자만 추출
-            numbers = re.findall(r'\d+', text)
+            numbers = re.findall(r"\d+", text)
             if numbers:
                 return int(numbers[0])
             return 0
-        except:
+        except Exception:
             return 0
 
     def _map_status_to_code(self, status_text: str) -> str:
