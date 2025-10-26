@@ -25,7 +25,7 @@ class SecuritySettings:
             "ALLOWED_ORIGINS", "https://app.bodam.example"
         ).split(",")
     )
-    jwt_secret: str = os.getenv("JWT_SECRET", "change-me-secret")
+    jwt_secret: str = os.getenv("JWT_SECRET") or os.getenv("JWT_SECRET_KEY", "change-me-secret")
     jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
     jwt_private_key: str | None = os.getenv("JWT_PRIVATE_KEY")
     jwt_public_key: str | None = os.getenv("JWT_PUBLIC_KEY")
