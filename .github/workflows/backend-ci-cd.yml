@@ -225,6 +225,10 @@ jobs:
       - name: Kubernetes 리소스 배포
         run: |
           kubectl apply -f infra/k8s/backend/configmap.yaml -n ${{ steps.env.outputs.namespace }}
+
+          # Service type 변경을 위해 기존 Service 삭제 후 재생성
+          kubectl delete svc bodam-backend-service -n ${{ steps.env.outputs.namespace }} --ignore-not-found=true
+
           kubectl apply -f infra/k8s/backend/backend-deployment.yaml -n ${{ steps.env.outputs.namespace }}
           kubectl apply -f infra/k8s/backend/backend-hpa.yaml -n ${{ steps.env.outputs.namespace }}
           kubectl apply -f infra/k8s/backend/celery-worker-hpa.yaml -n ${{ steps.env.outputs.namespace }}
