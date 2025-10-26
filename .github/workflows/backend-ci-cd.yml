@@ -75,7 +75,9 @@ jobs:
         env:
           DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/bodam_test
           REDIS_URL: redis://localhost:6379/0
-          JWT_SECRET_KEY: test-secret-key-for-ci
+          JWT_SECRET_KEY: test-secret-key-for-ci-environment-must-be-at-least-32-characters-long
+          ADMIN_SECRET_KEY: admin-secret-key-for-ci-testing-environment-32chars-minimum
+          TOGETHER_AI_API_KEY: test-together-ai-api-key-for-testing
           ENVIRONMENT: test
         run: |
           pytest tests/unit/ -v --cov=src --cov-report=xml --cov-report=term
@@ -85,7 +87,9 @@ jobs:
         env:
           DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/bodam_test
           REDIS_URL: redis://localhost:6379/0
-          JWT_SECRET_KEY: test-secret-key-for-ci
+          JWT_SECRET_KEY: test-secret-key-for-ci-environment-must-be-at-least-32-characters-long
+          ADMIN_SECRET_KEY: admin-secret-key-for-ci-testing-environment-32chars-minimum
+          TOGETHER_AI_API_KEY: test-together-ai-api-key-for-testing
           ENVIRONMENT: test
         run: |
           pytest tests/integration/ -v --cov=src --cov-append --cov-report=xml
@@ -95,6 +99,9 @@ jobs:
         env:
           DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/bodam_test
           REDIS_URL: redis://localhost:6379/0
+          JWT_SECRET_KEY: test-secret-key-for-ci-environment-must-be-at-least-32-characters-long
+          ADMIN_SECRET_KEY: admin-secret-key-for-ci-testing-environment-32chars-minimum
+          TOGETHER_AI_API_KEY: test-together-ai-api-key-for-testing
           ENVIRONMENT: test
         run: |
           pytest tests/performance/ -v
