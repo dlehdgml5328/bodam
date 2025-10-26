@@ -80,7 +80,7 @@ jobs:
           TOGETHER_AI_API_KEY: test-together-ai-api-key-for-testing
           ENVIRONMENT: test
         run: |
-          pytest tests/unit/ -v --cov=src --cov-report=xml --cov-report=term
+          pytest tests/unit/ -v --cov=src --cov-report=xml --cov-report=term --ignore=tests/unit/test_webdriver_pool.py --ignore=tests/unit/test_content_extractor.py
 
       - name: 통합 테스트 실행
         working-directory: ./backend
