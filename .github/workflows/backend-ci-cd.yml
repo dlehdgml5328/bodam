@@ -226,13 +226,11 @@ jobs:
         run: |
           kubectl apply -f infra/k8s/backend/configmap.yaml -n ${{ steps.env.outputs.namespace }}
 
-          # Service type 변경을 위해 기존 Service 삭제 후 재생성
-          kubectl delete svc bodam-backend-service -n ${{ steps.env.outputs.namespace }} --ignore-not-found=true
+          # Service type을 변경할 수 있도록 서버사이드 적용 사용
+          kubectl apply --server-side=true --force-conflicts=true -f infra/k8s/backend/backend-deployment.yaml -n ${{ steps.env.outputs.namespace }}
 
-          kubectl apply -f infra/k8s/backend/backend-deployment.yaml -n ${{ steps.env.outputs.namespace }}
           kubectl apply -f infra/k8s/backend/backend-hpa.yaml -n ${{ steps.env.outputs.namespace }}
           kubectl apply -f infra/k8s/backend/celery-worker-hpa.yaml -n ${{ steps.env.outputs.namespace }}
-          kubectl apply -f infra/k8s/backend/ingress.yaml -n ${{ steps.env.outputs.namespace }}
 
       - name: 배포 상태 확인
         run: |
