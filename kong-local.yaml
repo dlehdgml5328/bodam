@@ -1,0 +1,117 @@
+_format_version: "3.0"
+_transform: true
+
+# Backend Service (로컬 개발 환경)
+services:
+  - name: bodam-backend
+    url: http://backend:8000
+    connect_timeout: 60000
+    write_timeout: 60000
+    read_timeout: 60000
+    routes:
+      # Health Check (no auth)
+      - name: health-check
+        paths:
+          - /health
+          - /healthz
+          - /readyz
+        methods:
+          - GET
+        strip_path: false
+        preserve_host: true
+
+      # API docs (개발 환경에서만)
+      - name: api-docs
+        paths:
+          - /docs
+          - /redoc
+          - /openapi.json
+        methods:
+          - GET
+        strip_path: false
+        preserve_host: true
+
+      # Auth routes (no JWT required)
+      - name: auth-routes
+        paths:
+          - /api/auth/login
+          - /api/auth/register
+          - /api/auth/refresh
+        methods:
+          - POST
+        strip_path: false
+        preserve_host: true
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 100  # 개발 환경에서는 더 관대하게
+              hour: 1000
+              policy: local
+
+      # Public API routes
+      - name: fire-stations-search
+        paths:
+          - /api/fire-stations/search
+        methods:
+          - GET
+        strip_path: false
+        preserve_host: true
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 500
+              hour: 5000
+              policy: local
+
+      # Catch-all for other API routes
+      - name: api-catchall
+        paths:
+          - /api
+        strip_path: false
+        preserve_host: true
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 200
+              hour: 2000
+              policy: local
+
+# Global Plugins (개발 환경 설정)
+plugins:
+  - name: cors
+    config:
+      origins:
+        - "http://localhost:3000"
+        - "http://127.0.0.1:3000"
+        - "http://frontend:3000"
+      methods:
+        - GET
+        - POST
+        - PUT
+        - DELETE
+        - PATCH
+        - OPTIONS
+      headers:
+        - Accept
+        - Authorization
+        - Content-Type
+        - X-Request-ID
+      exposed_headers:
+        - X-RateLimit-Limit
+        - X-RateLimit-Remaining
+        - X-RateLimit-Reset
+      credentials: true
+      max_age: 3600
+
+  - name: request-transformer
+    config:
+      add:
+        headers:
+          - "X-Kong-Request-ID:$(uuid)"
+          - "X-Environment:development"
+
+  - name: correlation-id
+    config:
+      header_name: X-Request-ID
+      generator: uuid
+      echo_downstream: true

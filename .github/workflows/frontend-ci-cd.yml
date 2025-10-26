@@ -1,9 +1,10 @@
 name: Frontend CI/CD
 
-# wonuk, donghee 브랜치 push 시 트리거
+# develop, wonuk, donghee 브랜치 push 시 트리거
 on:
   push:
     branches:
+      - develop
       - wonuk
       - donghee
     paths:

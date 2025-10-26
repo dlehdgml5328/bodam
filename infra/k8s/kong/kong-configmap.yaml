@@ -2,9 +2,125 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: kong-config
-  namespace: default
+  namespace: bodam
 data:
-  kong-config.yaml: |
-    # Kong Gateway declarative configuration loaded from specs/002/contracts/kong-gateway-routes.yaml
-    # This file is managed by the deployment process
-    # To update: modify the source file and redeploy
+  kong.yaml: |
+    _format_version: "3.0"
+    _transform: true
+
+    # Backend Service
+    services:
+      - name: bodam-backend
+        url: http://bodam-backend.bodam.svc.cluster.local:80
+        connect_timeout: 60000
+        write_timeout: 60000
+        read_timeout: 60000
+        routes:
+          # Health Check (no auth)
+          - name: health-check
+            paths:
+              - /health
+              - /healthz
+              - /readyz
+            methods:
+              - GET
+            strip_path: false
+            preserve_host: true
+
+          # Auth routes (no JWT required)
+          - name: auth-routes
+            paths:
+              - /api/auth/login
+              - /api/auth/register
+              - /api/auth/refresh
+            methods:
+              - POST
+            strip_path: false
+            preserve_host: true
+            plugins:
+              - name: rate-limiting
+                config:
+                  minute: 10
+                  hour: 100
+                  policy: local
+
+          # Public API routes
+          - name: fire-stations-search
+            paths:
+              - /api/fire-stations/search
+            methods:
+              - GET
+            strip_path: false
+            preserve_host: true
+            plugins:
+              - name: rate-limiting
+                config:
+                  minute: 200
+                  hour: 2000
+                  policy: local
+
+          # Protected API routes (JWT required)
+          - name: donations
+            paths:
+              - /api/donations
+            methods:
+              - GET
+              - POST
+            strip_path: false
+            preserve_host: true
+            plugins:
+              - name: rate-limiting
+                config:
+                  minute: 100
+                  hour: 1000
+                  policy: local
+
+          # Catch-all for other API routes
+          - name: api-catchall
+            paths:
+              - /api
+            strip_path: false
+            preserve_host: true
+            plugins:
+              - name: rate-limiting
+                config:
+                  minute: 100
+                  hour: 1000
+                  policy: local
+
+    # Global Plugins
+    plugins:
+      - name: cors
+        config:
+          origins:
+            - "*"
+          methods:
+            - GET
+            - POST
+            - PUT
+            - DELETE
+            - PATCH
+            - OPTIONS
+          headers:
+            - Accept
+            - Authorization
+            - Content-Type
+            - X-Request-ID
+          exposed_headers:
+            - X-RateLimit-Limit
+            - X-RateLimit-Remaining
+            - X-RateLimit-Reset
+          credentials: true
+          max_age: 3600
+
+      - name: request-transformer
+        config:
+          add:
+            headers:
+              - "X-Kong-Request-ID:$(uuid)"
+
+      - name: correlation-id
+        config:
+          header_name: X-Request-ID
+          generator: uuid
+          echo_downstream: true
