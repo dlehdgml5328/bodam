@@ -5,8 +5,8 @@
 import pytest
 from unittest.mock import AsyncMock, patch
 import httpx
-from backend.src.integrations.http_client import get_client
-from backend.src.integrations.retry_policy import fetch_with_retry
+from src.integrations.http_client import get_client
+from src.integrations.retry_policy import fetch_with_retry
 
 
 class TestRetryIntegration:

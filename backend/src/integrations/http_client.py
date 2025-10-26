@@ -5,7 +5,7 @@ httpx AsyncClient를 연결 풀 설정과 함께 생성합니다.
 from typing import Literal
 
 import httpx
-from backend.src.config import settings
+from src.config import settings
 
 
 def get_client(api_type: Literal["general", "payment"] = "general") -> httpx.AsyncClient:

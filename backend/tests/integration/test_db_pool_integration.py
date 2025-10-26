@@ -5,7 +5,7 @@
 import pytest
 import asyncio
 from sqlalchemy.exc import TimeoutError
-from backend.src.database.connection import SessionLocal, engine
+from src.database.connection import SessionLocal, engine
 
 
 class TestDBPoolIntegration:

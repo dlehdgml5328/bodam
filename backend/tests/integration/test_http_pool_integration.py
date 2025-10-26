@@ -3,7 +3,7 @@
 실제 HTTP 요청으로 연결 풀 동작 검증
 """
 import pytest
-from backend.src.integrations.http_client import get_client
+from src.integrations.http_client import get_client
 
 
 class TestHttpPoolIntegration:

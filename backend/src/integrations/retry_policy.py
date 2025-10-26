@@ -5,7 +5,7 @@ tenacity를 사용하여 HTTP 요청 재시도 로직을 구현합니다.
 from typing import Any
 
 import httpx
-from backend.src.config import settings
+from src.config import settings
 from tenacity import (
     retry,
     retry_if_exception_type,
