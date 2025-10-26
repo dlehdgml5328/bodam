@@ -5,13 +5,14 @@ tenacity를 사용하여 HTTP 요청 재시도 로직을 구현합니다.
 from typing import Any
 
 import httpx
-from src.config import settings
 from tenacity import (
     retry,
     retry_if_exception_type,
     stop_after_attempt,
     wait_fixed,
 )
+
+from src.config import settings
 
 # 재시도 가능한 예외 타입
 RETRYABLE_EXCEPTIONS = (
