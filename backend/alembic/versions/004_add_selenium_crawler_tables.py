@@ -24,22 +24,22 @@ def upgrade() -> None:
 
     # Create selenium_crawl_jobs table
     op.create_table(
-        'selenium_crawl_jobs',
-        sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text('gen_random_uuid()')),
-        sa.Column('url', sa.String(2048), nullable=False),
-        sa.Column('browser_type', sa.String(20), nullable=False, server_default='chrome'),
-        sa.Column('wait_conditions', postgresql.JSONB, nullable=True),
-        sa.Column('retry_count', sa.Integer, nullable=False, server_default='0'),
-        sa.Column('max_retries', sa.Integer, nullable=False, server_default='3'),
-        sa.Column('status', sa.String(20), nullable=False),
-        sa.Column('created_at', sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text('NOW()')),
-        sa.Column('started_at', sa.TIMESTAMP(timezone=True), nullable=True),
-        sa.Column('completed_at', sa.TIMESTAMP(timezone=True), nullable=True),
-        sa.Column('error_message', sa.Text, nullable=True),
-        sa.Column('job_metadata', postgresql.JSONB, nullable=True),
-        sa.CheckConstraint("browser_type IN ('chrome', 'firefox')", name='ck_browser_type'),
-        sa.CheckConstraint("status IN ('pending', 'running', 'completed', 'failed', 'timeout')", name='ck_status'),
-        sa.CheckConstraint('retry_count <= max_retries', name='ck_retry_limit'),
+        "selenium_crawl_jobs",
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column("url", sa.String(2048), nullable=False),
+        sa.Column("browser_type", sa.String(20), nullable=False, server_default="chrome"),
+        sa.Column("wait_conditions", postgresql.JSONB, nullable=True),
+        sa.Column("retry_count", sa.Integer, nullable=False, server_default="0"),
+        sa.Column("max_retries", sa.Integer, nullable=False, server_default="3"),
+        sa.Column("status", sa.String(20), nullable=False),
+        sa.Column("created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("NOW()")),
+        sa.Column("started_at", sa.TIMESTAMP(timezone=True), nullable=True),
+        sa.Column("completed_at", sa.TIMESTAMP(timezone=True), nullable=True),
+        sa.Column("error_message", sa.Text, nullable=True),
+        sa.Column("job_metadata", postgresql.JSONB, nullable=True),
+        sa.CheckConstraint("browser_type IN ('chrome', 'firefox')", name="ck_browser_type"),
+        sa.CheckConstraint("status IN ('pending', 'running', 'completed', 'failed', 'timeout')", name="ck_status"),
+        sa.CheckConstraint("retry_count <= max_retries", name="ck_retry_limit"),
     )
 
     # Create indexes for selenium_crawl_jobs
