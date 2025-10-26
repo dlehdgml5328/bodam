@@ -17,6 +17,8 @@ spec:
         app: bodam-backend
         tier: backend
     spec:
+      imagePullSecrets:
+      - name: regcred
       containers:
       # 컨테이너 1: FastAPI 백엔드 서버
       - name: fastapi
