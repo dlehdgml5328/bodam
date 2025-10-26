@@ -89,35 +89,21 @@ spec:
         # Health Check
         livenessProbe:
           httpGet:
-            path: /health
+            path: /healthz
             port: 8080
           initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
-        
+
         readinessProbe:
           httpGet:
-            path: /ready
+            path: /readyz
             port: 8080
           initialDelaySeconds: 10
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 2
-      
-      # 컨테이너 2: Celery Worker (모든 워커 역할 통합)
-      - name: celery-worker
-        image: bodam/backend:latest
-        imagePullPolicy: Always
-
-        command:
-        - celery
-        - -A
-        - src.workers.celery_app
-        - worker
-        - --loglevel=info
-        - --concurrency=4
-        - --max-tasks-per-child=100
 
         env:
         # 데이터베이스 설정
@@ -162,7 +148,7 @@ spec:
             command:
             - celery
             - -A
-            - src.workers.celery_app
+            - src.worker:celery_app
             - inspect
             - ping
           initialDelaySeconds: 60
