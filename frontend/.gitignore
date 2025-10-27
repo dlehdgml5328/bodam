@@ -1,1 +1,5 @@
 .vercel
+
+# Frontend test results
+frontend/playwright-report/
+frontend/test-results/
