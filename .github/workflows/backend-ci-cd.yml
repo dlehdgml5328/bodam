@@ -278,7 +278,8 @@ jobs:
             exit 1
           fi
 
-          API_URL="http://${INGRESS_IP}"
+          # HTTPS 도메인 사용 (TLS 설정 완료)
+          API_URL="https://api.bodam.website"
           echo "api_url=${API_URL}" >> $GITHUB_OUTPUT
           echo "🌐 Using Ingress IP: ${INGRESS_IP}"
           echo "🌐 API URL: ${API_URL}"
