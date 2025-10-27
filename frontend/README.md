@@ -97,3 +97,4 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 ---
 
 **🚨 다시 한번 강조: 이 프로젝트는 Next.js입니다. 절대 React SPA로 변환하지 마세요!**
+# Frontend Deployment Test
