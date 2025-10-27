@@ -1,7 +1,5 @@
 {
   "version": 2,
-  "buildCommand": "cd frontend && npm run build",
-  "outputDirectory": "frontend/.next",
   "framework": "nextjs",
   "regions": ["icn1"],
   "env": {
