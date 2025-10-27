@@ -8,6 +8,9 @@ from fastapi.middleware.cors import CORSMiddleware
 ALLOWED_ORIGINS = [
     "https://app.bodam.example",
     "http://localhost:3000",
+    "https://frontend-sigma-pearl-65.vercel.app",
+    "https://bodam.website",
+    "https://www.bodam.website",
 ]
 
 
