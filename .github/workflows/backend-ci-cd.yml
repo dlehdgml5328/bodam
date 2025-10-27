@@ -246,6 +246,21 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: DigitalOcean CLI 설치
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_TOKEN }}
+
+      - name: Kubernetes 클러스터 연결
+        run: |
+          if [ "${{ github.ref }}" == "refs/heads/donghee" ]; then
+            CLUSTER_ID="d3e14d15-3c77-4620-95d5-ff84a8eee455"
+          else
+            CLUSTER_ID="d3e14d15-3c77-4620-95d5-ff84a8eee455"
+          fi
+          mkdir -p $HOME/.kube
+          doctl kubernetes cluster kubeconfig show ${CLUSTER_ID} > $HOME/.kube/config
+
       - name: 환경 변수 설정
         id: env
         run: |
