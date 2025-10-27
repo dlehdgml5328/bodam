@@ -30,6 +30,8 @@ spec:
                 secretKeyRef:
                   name: bodam-secrets
                   key: jwt-secret
+            - name: ALLOWED_ORIGINS
+              value: "https://frontend-sigma-pearl-65.vercel.app,https://frontend-wheat-bodam.vercel.app,https://bodam.website,https://www.bodam.website"
             - name: REDIS_CACHE_URL
               value: redis://redis-cache-service:6379/0
             - name: CELERY_BROKER_URL

@@ -66,6 +66,8 @@ spec:
           value: "0.0.0.0"
         - name: API_PORT
           value: "8080"
+        - name: ALLOWED_ORIGINS
+          value: "https://frontend-sigma-pearl-65.vercel.app,https://frontend-wheat-bodam.vercel.app,https://bodam.website,https://www.bodam.website"
 
         # 로그 설정
         - name: LOG_LEVEL

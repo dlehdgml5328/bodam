@@ -137,6 +137,9 @@ kubectl wait --for=condition=ready pod -l app=redis --timeout=300s
 
 ```bash
 kubectl apply -f infra/k8s/backend/backend-deployment.yaml
+kubectl set env deployment/bodam-backend \
+  ALLOWED_ORIGINS="https://frontend-sigma-pearl-65.vercel.app,https://bodam.website,https://www.bodam.website" \
+  -n <NAMESPACE>
 
 # 배포 확인
 kubectl rollout status deployment/bodam-backend
