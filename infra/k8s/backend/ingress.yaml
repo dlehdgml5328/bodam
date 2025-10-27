@@ -5,7 +5,8 @@ metadata:
   annotations:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
-    nginx.ingress.kubernetes.io/websocket-services: "bodam-backend"
+    nginx.ingress.kubernetes.io/websocket-services: "bodam-backend-service"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
     # cert-manager.io/cluster-issuer: "letsencrypt-prod"  # 도메인 설정 후 주석 해제
 spec:
   ingressClassName: nginx

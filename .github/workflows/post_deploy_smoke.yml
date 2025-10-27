@@ -13,7 +13,7 @@ jobs:
     steps:
       - name: Run smoke checks
         run: |
-          curl -fsSL "$ENVIRONMENT_URL/healthz"
           curl -fsSL "$ENVIRONMENT_URL/readyz"
+          curl -fsSL "$ENVIRONMENT_URL/"
         env:
           ENVIRONMENT_URL: ${{ github.event.inputs.environment }}
