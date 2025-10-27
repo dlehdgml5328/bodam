@@ -7,15 +7,16 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
     nginx.ingress.kubernetes.io/websocket-services: "bodam-backend-service"
     nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
-    # cert-manager.io/cluster-issuer: "letsencrypt-prod"  # 도메인 설정 후 주석 해제
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
 spec:
   ingressClassName: nginx
-  # tls:  # 도메인 설정 후 주석 해제
-  #   - hosts:
-  #       - api.yourdomain.com
-  #     secretName: bodam-backend-tls
+  tls:
+    - hosts:
+        - api.bodam.website
+      secretName: bodam-backend-tls
   rules:
-    - http:  # 도메인 없이 IP로 직접 접근
+    - host: api.bodam.website
+      http:
         paths:
           - path: /
             pathType: Prefix
