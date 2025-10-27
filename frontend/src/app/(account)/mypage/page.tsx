@@ -574,23 +574,23 @@ export default function MyPage() {
 
       // API 호출
       if (Object.keys(updateData).length > 0) {
-        const updatedUser = await apiRequest('/auth/me', {
+        const updatedUser = await apiRequest<{ name?: string; phone?: string; id_number?: string }>('/auth/me', {
           method: 'PATCH',
           body: JSON.stringify(updateData),
-        });
+        }) as { name?: string; phone?: string; id_number?: string };
 
         // 상태 업데이트
         setUserInfo(prev => ({
           ...prev,
-          name: updatedUser.name,
-          phone: updatedUser.phone,
+          name: updatedUser?.name ?? prev.name,
+          phone: updatedUser?.phone ?? prev.phone,
         }));
 
         setEditForm(prev => ({
           ...prev,
-          name: updatedUser.name,
-          phone: updatedUser.phone,
-          idNumber: updatedUser.id_number,
+          name: updatedUser?.name ?? prev.name,
+          phone: updatedUser?.phone ?? prev.phone,
+          idNumber: updatedUser?.id_number ?? prev.idNumber,
           newPhone: '',
           newIdNumber: '',
         }));
