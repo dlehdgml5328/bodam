@@ -250,10 +250,23 @@ jobs:
         id: env
         run: |
           if [ "${{ github.ref }}" == "refs/heads/donghee" ]; then
-            echo "api_url=${{ secrets.PRODUCTION_API_URL }}" >> $GITHUB_OUTPUT
+            NAMESPACE="bodam-production"
           else
-            echo "api_url=${{ secrets.PREVIEW_API_URL }}" >> $GITHUB_OUTPUT
+            NAMESPACE="bodam-preview"
           fi
+
+          # Ingress에서 실제 External IP 가져오기
+          INGRESS_IP=$(kubectl get ingress -n $NAMESPACE bodam-backend -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+
+          if [ -z "$INGRESS_IP" ]; then
+            echo "❌ Ingress IP를 찾을 수 없습니다"
+            exit 1
+          fi
+
+          API_URL="http://${INGRESS_IP}"
+          echo "api_url=${API_URL}" >> $GITHUB_OUTPUT
+          echo "🌐 Using Ingress IP: ${INGRESS_IP}"
+          echo "🌐 API URL: ${API_URL}"
 
       - name: Health Check 확인
         run: |
