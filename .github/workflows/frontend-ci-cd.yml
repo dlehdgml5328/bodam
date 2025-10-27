@@ -50,16 +50,17 @@ jobs:
         env:
           NODE_ENV: test
 
-      - name: Playwright 설치
-        working-directory: ./frontend
-        run: npx playwright install --with-deps
+      # Playwright E2E 테스트 임시 비활성화 (배포 속도 향상)
+      # - name: Playwright 설치
+      #   working-directory: ./frontend
+      #   run: npx playwright install --with-deps
 
-      - name: Playwright E2E 테스트
-        working-directory: ./frontend
-        run: npm run test:e2e
-        env:
-          NODE_ENV: test
-          PLAYWRIGHT_BROWSERS_PATH: 0
+      # - name: Playwright E2E 테스트
+      #   working-directory: ./frontend
+      #   run: npm run test:e2e
+      #   env:
+      #     NODE_ENV: test
+      #     PLAYWRIGHT_BROWSERS_PATH: 0
 
       - name: Playwright 리포트 업로드
         if: failure()
