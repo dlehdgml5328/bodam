@@ -9,6 +9,7 @@ on:
       - donghee
     paths:
       - 'backend/**'
+      - 'infra/k8s/backend/**'
       - '.github/workflows/backend-ci-cd.yml'
   workflow_dispatch:
 
