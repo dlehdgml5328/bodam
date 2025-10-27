@@ -116,7 +116,7 @@ jobs:
     name: Vercel Preview 배포
     needs: build
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/wonuk'
+    if: github.ref == 'refs/heads/wonuk' || github.ref == 'refs/heads/develop'
 
     steps:
       - name: 체크아웃
@@ -133,7 +133,7 @@ jobs:
         working-directory: ./frontend
         run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
         env:
-          NEXT_PUBLIC_API_URL: ${{ secrets.PREVIEW_API_URL }}
+          NEXT_PUBLIC_API_URL: http://129.212.208.32
 
       - name: Vercel 배포 (Preview)
         id: deploy
@@ -156,6 +156,7 @@ jobs:
 
       - name: 배포 알림 (Slack)
         if: always()
+        continue-on-error: true
         uses: slackapi/slack-github-action@v1
         with:
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -168,7 +169,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "*Frontend Preview 배포*\n상태: ${{ job.status }}\n브랜치: wonuk\nURL: ${{ steps.deploy.outputs.preview_url }}"
+                    "text": "*Frontend Preview 배포*\n상태: ${{ job.status }}\n브랜치: ${{ github.ref_name }}\nURL: ${{ steps.deploy.outputs.preview_url }}"
                   }
                 }
               ]
@@ -215,6 +216,7 @@ jobs:
 
       - name: 배포 알림 (Slack)
         if: always()
+        continue-on-error: true
         uses: slackapi/slack-github-action@v1
         with:
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
