@@ -84,13 +84,15 @@ export default function MyPage() {
 
   // URL 파라미터 확인하여 기부내역 모달 표시
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('showDonationHistory') === 'true') {
       setShowDonationHistoryModal(true);
       // URL에서 파라미터 제거
       window.history.replaceState({}, '', '/mypage');
     }
-    
+
     // 프로필 관리 탭으로 직접 이동하는 경우
     if (urlParams.get('tab') === 'settings') {
       setActiveTab('settings');
@@ -104,9 +106,11 @@ export default function MyPage() {
       storedUserTypeRaw === 'group' ? 'group' : 'individual';
     const storedGroupNumber = localStorage.getItem('groupNumber') || '';
     const storedUserNickname = localStorage.getItem('userNickname') || '소방이';
+    const storedProfileImage = localStorage.getItem('userProfileImage') || '';
 
     setUserType(storedUserType);
     setGroupNumber(storedGroupNumber);
+    setUserInfo(prev => ({ ...prev, profileImage: storedProfileImage }));
     
     // 단체 로그인인 경우 사용자 정보를 단체 정보로 업데이트
     if (storedUserType === 'group') {
@@ -168,7 +172,7 @@ export default function MyPage() {
     rank: 0,
     level: '',
     badge: '',
-    profileImage: localStorage.getItem('userProfileImage') || ''
+    profileImage: ''
   });
 
   // 데이터 로딩 - API에서 기부 내역과 정기 기부 가져오기
