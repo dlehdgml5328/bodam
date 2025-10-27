@@ -281,6 +281,7 @@ jobs:
 
       - name: 배포 알림 (Slack)
         if: always()
+        continue-on-error: true
         uses: slackapi/slack-github-action@v1
         with:
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
