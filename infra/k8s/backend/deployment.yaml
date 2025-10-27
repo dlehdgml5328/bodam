@@ -16,7 +16,7 @@ spec:
         - name: registry-bodam
       containers:
         - name: backend
-          image: registry.digitalocean.com/bodam/backend:latest
+          image: registry.digitalocean.com/bodam/backend:preview-8916766215894615b9f91332a773db861febf3c7
           ports:
             - containerPort: 8000
           env:
