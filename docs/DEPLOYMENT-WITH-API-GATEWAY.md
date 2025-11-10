@@ -1,8 +1,9 @@
 # 보담(BoDam) 배포 전략 - API Gateway 포함 버전
 
-> **작성일**: 2025-10-01
+> **작성일**: 2025-10-26 (최종 업데이트)
 > **대상 환경**: Production (확장성 고려)
-> **주요 기술**: Vercel, DigitalOcean, Kubernetes, Kong API Gateway, NGINX
+> **주요 기술**: Vercel, DigitalOcean, Kubernetes, Kong Gateway 3.5, NGINX 1.25, Selenium 4.15+
+> **최신 업데이트**: Kong Gateway + Selenium 크롤러 마이그레이션 완료, DB/HTTP 연결 풀 최적화
 
 ---
 
@@ -11,9 +12,11 @@
 1. [확장성을 고려한 아키텍처](#확장성을-고려한-아키텍처)
 2. [API Gateway 도입 이유](#api-gateway-도입-이유)
 3. [전체 시스템 구성도](#전체-시스템-구성도)
-4. [단계별 구축 가이드](#단계별-구축-가이드)
-5. [실전 설정 파일](#실전-설정-파일)
-6. [운영 및 모니터링](#운영-및-모니터링)
+4. [최신 변경사항](#최신-변경사항)
+5. [단계별 구축 가이드](#단계별-구축-가이드)
+6. [실전 설정 파일](#실전-설정-파일)
+7. [DB 및 HTTP 연결 풀 설정](#db-및-http-연결-풀-설정)
+8. [운영 및 모니터링](#운영-및-모니터링)
 
 ---
 
@@ -41,8 +44,8 @@ graph TB
         LB[DO Load Balancer<br/>External IP]
 
         subgraph "Ingress Layer"
-            KongIngress[Kong Ingress Controller]
-            NginxIngress[NGINX Ingress Controller]
+            NginxIngress[NGINX Ingress<br/>TLS + 정적파일]
+            KongGateway[Kong Gateway<br/>API 라우팅]
         end
 
         subgraph "Application Layer"
@@ -83,15 +86,13 @@ graph TB
     U2 --> V
     U3 --> Kong
 
-    V -.API 요청.-> Kong
-    Kong --> LB
-    LB --> KongIngress
+    V -.API 요청.-> LB
 
-    KongIngress -->|/api/*| NginxIngress
-    KongIngress -->|/media/*| NginxIngress
+    LB --> NginxIngress
+    NginxIngress -->|/api/* 프록시| KongGateway
+    NginxIngress -->|/static/*, /media/* 직접 서빙| NginxService
 
-    NginxIngress --> FastAPIService
-    NginxIngress --> NginxService
+    KongGateway -->|인증/Rate Limit 후| FastAPIService
 
     FastAPIService --> FastAPI1
     FastAPIService --> FastAPI2
@@ -116,24 +117,125 @@ graph TB
 
 ---
 
+## 최신 변경사항
+
+### 2025년 10월 주요 업데이트
+
+#### 1. Kong Gateway 3.5 DB-less 모드 적용
+- **변경**: PostgreSQL 기반 → DB-less (Declarative Config) 모드
+- **이유**: 설정 관리 간소화, 배포 속도 향상, 장애 포인트 제거
+- **적용**: ConfigMap 기반 선언적 설정 (`kong-config.yaml`)
+
+```yaml
+# Kong DB-less 설정
+KONG_DATABASE=off
+KONG_DECLARATIVE_CONFIG=/kong.yaml
+```
+
+#### 2. Selenium 4.15+ 동적 크롤러 전환
+- **변경**: BeautifulSoup4 정적 크롤러 → Selenium WebDriver
+- **이유**: JavaScript 렌더링 콘텐츠 수집 필요 (뉴스, 재난 정보)
+- **기술 스택**: Chrome headless + WebDriver Manager + Selenium Grid
+
+```python
+# Selenium 크롤러 서비스 구조
+backend/src/services/crawler/
+├── selenium_crawler.py      # Selenium WebDriver 관리
+├── browser_pool.py          # 브라우저 인스턴스 풀링
+└── wait_strategies.py       # 동적 콘텐츠 대기 전략
+```
+
+#### 3. DB/HTTP 연결 풀 최적화
+- **DB 연결 풀**: SQLAlchemy 2.0 비동기 엔진 설정
+  - `pool_size=10`, `max_overflow=20`, `pool_timeout=0.4s`
+  - `pool_pre_ping=true` (끊어진 연결 자동 감지/재생성)
+  - `pool_recycle=3600s` (1시간마다 연결 재활용)
+
+- **HTTP 연결 풀**: httpx 클라이언트 풀링
+  - 일반 API: `max_connections=100`, `connect_timeout=4s`, `read_timeout=8s`
+  - 결제 API: `connect_timeout=180s`, `read_timeout=180s`
+  - Keep-Alive: `max_keepalive_connections=20`, `keepalive_expiry=60s`
+
+- **재시도 정책**: tenacity 기반
+  - 최대 3회 재시도 (GET 요청), 간격 4초
+  - POST 요청: 멱등성 키 필수 (idempotency-key)
+  - 결제 API 제외 도메인: `api.tosspayments.com`, `pay.naver.com`
+
+```bash
+# 환경 변수 예시
+DB_POOL_SIZE=10
+DB_MAX_OVERFLOW=20
+DB_POOL_TIMEOUT=0.4
+
+HTTP_MAX_CONNECTIONS=100
+HTTP_CONNECT_TIMEOUT=4.0
+HTTP_READ_TIMEOUT=8.0
+
+RETRY_MAX_ATTEMPTS=3
+RETRY_INTERVAL=4.0
+RETRY_EXCLUDED_DOMAINS=api.tosspayments.com,pay.naver.com
+```
+
+#### 4. NGINX 역할 재정의
+- **이전**: API 라우팅 + 정적 파일 서빙 + TLS 터미네이션
+- **현재**: TLS 터미네이션 + 정적 파일 서빙 (API 라우팅은 Kong으로 이관)
+- **정적 파일**: `/static/`, `/media/`, `/receipts/` 직접 서빙 (Kong 우회)
+
+```nginx
+# NGINX 정적 파일 설정
+location /static/ {
+    alias /var/www/static/;
+    expires 1y;
+    add_header Cache-Control "public, immutable";
+}
+
+location /media/ {
+    alias /var/www/media/;
+    expires 30d;
+    add_header Cache-Control "public";
+}
+```
+
+#### 5. 관측성 강화
+- OpenTelemetry (OTEL) 트레이싱 추가
+- Prometheus + Grafana 메트릭 수집
+- Loki + Promtail 로그 집계
+- Tempo 분산 트레이싱
+
+```yaml
+# Backend Deployment에 OTEL 설정 추가
+env:
+  - name: OTEL_EXPORTER_OTLP_ENDPOINT
+    value: http://otel-collector.observability.svc.cluster.local:4318
+  - name: OTEL_SERVICE_NAME
+    value: backend-api
+```
+
+---
+
 ## API Gateway 도입 이유
 
 ### 1. **확장성 확보**
 
 #### 마이크로서비스 전환 대비
 ```
-현재:
-  Kong → NGINX Ingress → FastAPI (단일 서비스)
+현재 아키텍처:
+  Client → NGINX (TLS 터미네이션) → Kong Gateway (인증/라우팅) → FastAPI
 
-6개월 후:
-  Kong → NGINX Ingress → ┌─ User Service (FastAPI)
-                          ├─ Donation Service (FastAPI)
-                          ├─ Payment Service (FastAPI)
-                          ├─ Notification Service (Node.js)
-                          └─ Analytics Service (Python)
+역할 분담:
+  - NGINX: HTTPS 처리, 정적 파일 직접 서빙
+  - Kong Gateway: API 인증, Rate Limiting, 라우팅
+  - FastAPI: 비즈니스 로직
+
+6개월 후 (마이크로서비스):
+  Client → NGINX (TLS) → Kong Gateway → ┌─ User Service (FastAPI)
+                                         ├─ Donation Service (FastAPI)
+                                         ├─ Payment Service (FastAPI)
+                                         ├─ Notification Service (Node.js)
+                                         └─ Analytics Service (Python)
 ```
 
-Kong이 있으면 서비스 추가 시 라우팅만 변경하면 됨.
+**장점**: Kong Gateway 설정만 변경하면 서비스 추가 가능. NGINX는 변경 불필요.
 
 ### 2. **외부 파트너 API 제공 준비**
 
@@ -155,14 +257,17 @@ sequenceDiagram
 
 ### 3. **고급 기능 지원**
 
-| 기능 | Kong API Gateway | NGINX Ingress만 |
-|------|-----------------|-----------------|
-| **사용자별 Rate Limiting** | ✅ 가능 | ❌ IP별만 |
-| **API 키 관리** | ✅ 내장 | ❌ 직접 구현 |
-| **API 버전 관리** | ✅ /v1, /v2 라우팅 | ⚠️ 수동 설정 |
-| **실시간 분석** | ✅ 대시보드 | ❌ 없음 |
-| **플러그인 생태계** | ✅ 50+ 플러그인 | ❌ 제한적 |
-| **GraphQL 지원** | ✅ 내장 | ❌ 없음 |
+| 기능 | Kong Gateway | NGINX만 사용 시 |
+|------|---------------|-----------------|
+| **사용자별 Rate Limiting** | ✅ Consumer 단위 | ❌ IP별만 가능 |
+| **API 키 관리** | ✅ 내장 플러그인 | ❌ 직접 구현 필요 |
+| **API 버전 관리** | ✅ /v1, /v2 자동 라우팅 | ⚠️ 수동 설정 |
+| **실시간 분석** | ✅ Admin API | ❌ 로그 파싱 필요 |
+| **플러그인 생태계** | ✅ 50+ 공식 플러그인 | ❌ Lua 직접 작성 |
+| **TLS 터미네이션** | ⚠️ 가능하나 NGINX에 위임 | ✅ 최적화됨 |
+| **정적 파일 서빙** | ⚠️ 가능하나 NGINX에 위임 | ✅ 최적화됨 |
+
+**결론**: API 라우팅은 Kong, TLS와 정적 파일은 NGINX가 담당하여 각자의 강점을 살림.
 
 ---
 
@@ -185,13 +290,13 @@ flowchart LR
             LB[Load Balancer<br/>203.0.113.10]
         end
 
-        subgraph "Kong Layer"
-            Kong[Kong Gateway<br/>:8000/:8443]
-            KongAdmin[Kong Admin API<br/>:8001]
+        subgraph "NGINX Layer (Entry Point)"
+            NGINX[NGINX<br/>:443 TLS 터미네이션<br/>:80 HTTP 리다이렉트]
         end
 
-        subgraph "NGINX Layer"
-            NGINX[NGINX Ingress<br/>:80/:443]
+        subgraph "Kong Layer (API Gateway)"
+            Kong[Kong Gateway<br/>:8000 Proxy]
+            KongAdmin[Kong Admin API<br/>:8001 관리용]
         end
 
         subgraph "App Layer"
@@ -206,19 +311,163 @@ flowchart LR
         end
     end
 
-    User -->|1. 웹사이트| Frontend
-    User -->|2. API/파일| LB
-    Frontend -.3. API 요청.-> LB
+    User -->|웹사이트| Frontend
+    User -->|HTTPS 요청| LB
+    Frontend -->|API 요청| LB
 
-    LB --> Kong
-    Kong -->|인증/Rate Limit| NGINX
+    LB --> NGINX
 
-    NGINX -->|/api/*| FastAPI
-    NGINX -->|/media/*| StaticNginx
+    NGINX -->|/api/* 프록시| Kong
+    NGINX -->|/static/*, /media/*| StaticNginx
+
+    Kong -->|인증/Rate Limit/라우팅| FastAPI
 
     FastAPI --> DB
     FastAPI --> Cache
     StaticNginx --> Files
+```
+
+---
+
+## DB 및 HTTP 연결 풀 설정
+
+### DB 연결 풀 (SQLAlchemy 2.0)
+
+#### 환경 변수 설정
+
+```bash
+# .env 파일 또는 Kubernetes Secret
+DB_POOL_SIZE=10                    # 기본 연결 풀 크기
+DB_MAX_OVERFLOW=20                 # 최대 추가 연결 수
+DB_POOL_RECYCLE=3600               # 연결 재활용 시간 (초)
+DB_POOL_PRE_PING=true              # 연결 유효성 사전 검증
+DB_POOL_TIMEOUT=0.4                # 연결 대기 타임아웃 (초)
+```
+
+#### Kubernetes Secret 적용
+
+```bash
+# Secret 생성
+kubectl create secret generic db-pool-config \
+  --from-literal=DB_POOL_SIZE=10 \
+  --from-literal=DB_MAX_OVERFLOW=20 \
+  --from-literal=DB_POOL_RECYCLE=3600 \
+  --from-literal=DB_POOL_PRE_PING=true \
+  --from-literal=DB_POOL_TIMEOUT=0.4
+
+# Backend Deployment에 Secret 마운트
+# infra/k8s/backend/deployment.yaml에 추가:
+env:
+  - name: DB_POOL_SIZE
+    valueFrom:
+      secretKeyRef:
+        name: db-pool-config
+        key: DB_POOL_SIZE
+```
+
+#### 연결 풀 모니터링
+
+```python
+# backend/src/database/pool_metrics.py
+from sqlalchemy import event
+from prometheus_client import Gauge
+
+pool_size = Gauge('db_pool_size', 'Current pool size')
+checked_out = Gauge('db_pool_checked_out', 'Checked out connections')
+
+@event.listens_for(engine.pool, "checkout")
+def receive_checkout(dbapi_conn, connection_record, connection_proxy):
+    pool_size.set(engine.pool.size())
+    checked_out.set(engine.pool.checkedout())
+```
+
+### HTTP 연결 풀 (httpx)
+
+#### 환경 변수 설정
+
+```bash
+# 일반 API용
+HTTP_MAX_CONNECTIONS=100           # 최대 동시 연결 수
+HTTP_MAX_KEEPALIVE_CONNECTIONS=20  # Keep-Alive 연결 수
+HTTP_KEEPALIVE_EXPIRY=60.0         # Keep-Alive 유효 시간 (초)
+
+# 타임아웃 설정
+HTTP_CONNECT_TIMEOUT=4.0           # 연결 타임아웃 (초)
+HTTP_READ_TIMEOUT=8.0              # 읽기 타임아웃 (초)
+HTTP_WRITE_TIMEOUT=10.0            # 쓰기 타임아웃 (초)
+HTTP_POOL_TIMEOUT=10.0             # 연결 풀 대기 타임아웃 (초)
+
+# 결제 API용 (긴 타임아웃)
+HTTP_PAYMENT_CONNECT_TIMEOUT=180.0
+HTTP_PAYMENT_READ_TIMEOUT=180.0
+```
+
+#### 재시도 정책 설정
+
+```bash
+RETRY_MAX_ATTEMPTS=3               # 최대 재시도 횟수
+RETRY_INTERVAL=4.0                 # 재시도 간격 (초)
+RETRY_EXCLUDED_DOMAINS=api.tosspayments.com,pay.naver.com  # 재시도 제외 도메인
+```
+
+#### Kubernetes ConfigMap 적용
+
+```bash
+# ConfigMap 생성
+kubectl create configmap http-pool-config \
+  --from-literal=HTTP_MAX_CONNECTIONS=100 \
+  --from-literal=HTTP_CONNECT_TIMEOUT=4.0 \
+  --from-literal=HTTP_READ_TIMEOUT=8.0 \
+  --from-literal=RETRY_MAX_ATTEMPTS=3 \
+  --from-literal=RETRY_INTERVAL=4.0
+
+# Backend Deployment에 ConfigMap 마운트
+envFrom:
+  - configMapRef:
+      name: http-pool-config
+```
+
+#### HTTP 클라이언트 사용 예시
+
+```python
+# backend/src/integrations/http_client.py
+from httpx import AsyncClient, Limits, Timeout
+
+async def get_client(client_type: str = "general"):
+    """HTTP 클라이언트 팩토리"""
+    if client_type == "payment":
+        timeout = Timeout(
+            connect=float(os.getenv("HTTP_PAYMENT_CONNECT_TIMEOUT", 180.0)),
+            read=float(os.getenv("HTTP_PAYMENT_READ_TIMEOUT", 180.0))
+        )
+    else:
+        timeout = Timeout(
+            connect=float(os.getenv("HTTP_CONNECT_TIMEOUT", 4.0)),
+            read=float(os.getenv("HTTP_READ_TIMEOUT", 8.0)),
+            write=float(os.getenv("HTTP_WRITE_TIMEOUT", 10.0)),
+            pool=float(os.getenv("HTTP_POOL_TIMEOUT", 10.0))
+        )
+
+    limits = Limits(
+        max_connections=int(os.getenv("HTTP_MAX_CONNECTIONS", 100)),
+        max_keepalive_connections=int(os.getenv("HTTP_MAX_KEEPALIVE_CONNECTIONS", 20)),
+        keepalive_expiry=float(os.getenv("HTTP_KEEPALIVE_EXPIRY", 60.0))
+    )
+
+    return AsyncClient(timeout=timeout, limits=limits)
+```
+
+### 성능 테스트
+
+```bash
+# K6 부하 테스트 실행
+k6 run backend/tests/performance/connection_pool_load_test.js
+
+# 예상 결과:
+# - 100 VUs 부하 시 95% 요청이 5초 이내 응답
+# - 에러율 1% 미만
+# - DB 연결 풀 타임아웃 없음
+# - HTTP 연결 풀 타임아웃 없음
 ```
 
 ---
@@ -248,70 +497,86 @@ kubectl get nodes
 
 ---
 
-### Phase 2: Kong API Gateway 설치
+### Phase 2: Kong Gateway 설치 (DB-less 모드)
 
-#### 2-1. Kong Helm Chart 설치
+#### 2-1. Kong 설정 파일 준비
 
 ```bash
-# Helm 설치
-curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+# Kong ConfigMap 생성 (Declarative Config)
+kubectl apply -f infra/k8s/kong/kong-configmap.yaml
 
-# Kong Helm repo 추가
-helm repo add kong https://charts.konghq.com
-helm repo update
+# Kong Gateway Deployment 배포
+kubectl apply -f infra/k8s/kong/kong-deployment.yaml
 
-# Kong 설치 (Ingress Controller 포함)
-helm install kong kong/kong \
-  --namespace kong \
-  --create-namespace \
-  --set ingressController.enabled=true \
-  --set ingressController.installCRDs=false \
-  --set proxy.type=LoadBalancer \
-  --set admin.enabled=true \
-  --set admin.type=ClusterIP \
-  --set admin.http.enabled=true
-
-# Kong 설치 확인
-kubectl get pods -n kong
-kubectl get svc -n kong
-
-# Kong Proxy의 External IP 확인
-kubectl get svc kong-proxy -n kong
+# Kong Service 생성
+kubectl apply -f infra/k8s/kong/kong-service.yaml
 ```
 
-#### 2-2. Kong Admin API 접속
+#### 2-2. Kong 설정 파일 예시
+
+`infra/k8s/kong/kong-configmap.yaml`:
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kong-config
+data:
+  kong.yaml: |
+    _format_version: "3.0"
+
+    services:
+      - name: backend-api
+        url: http://bodam-backend.default.svc.cluster.local:80
+        routes:
+          - name: api-route
+            paths:
+              - /api
+            strip_path: false
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 200
+              policy: local
+          - name: cors
+            config:
+              origins:
+                - https://bodam.kr
+              credentials: true
+```
+
+#### 2-3. Kong 설치 확인
 
 ```bash
-# Port Forward로 로컬 접속
-kubectl port-forward -n kong svc/kong-admin 8001:8001 &
+# Kong Pod 상태 확인
+kubectl get pods -l app=kong
+
+# Kong 설정 검증
+kubectl exec -it <kong-pod-name> -- kong config parse /kong.yaml
+
+# Kong Admin API 접속 (Port Forward)
+kubectl port-forward svc/kong-admin-service 8001:8001
 
 # Kong 상태 확인
 curl http://localhost:8001/status
-
-# 응답 예시:
-# {
-#   "database": {"reachable": true},
-#   "server": {"connections_accepted": 10, "connections_active": 1}
-# }
 ```
+
 
 ---
 
 ### Phase 3: NGINX Ingress 설치
 
 ```bash
-# NGINX Ingress Controller 설치
-helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
-helm repo update
+# NGINX Deployment 및 Service 배포
+kubectl apply -f infra/k8s/nginx/nginx-configmap.yaml
+kubectl apply -f infra/k8s/nginx/nginx-deployment.yaml
+kubectl apply -f infra/k8s/nginx/nginx-service.yaml
 
-helm install nginx-ingress ingress-nginx/ingress-nginx \
-  --namespace ingress-nginx \
-  --create-namespace \
-  --set controller.service.type=ClusterIP \
-  --set controller.ingressClassResource.name=nginx
+# TLS 인증서 Secret 생성 (Let's Encrypt 또는 수동)
+kubectl apply -f infra/k8s/nginx/tls-certificate.yaml
 
 # 설치 확인
-kubectl get pods -n ingress-nginx
+kubectl get pods -l app=nginx-ingress
+kubectl get svc nginx-ingress-service
 ```
 
 ---
@@ -373,102 +638,129 @@ kubectl create secret generic jwt-secret \
 
 ---
 
-### 2. FastAPI Deployment
+### 2. FastAPI Deployment (최신 버전)
 
 ```yaml
-# k8s/fastapi-deployment.yaml
+# infra/k8s/backend/deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: fastapi-backend
-  namespace: bodam
-  labels:
-    app: fastapi
-    tier: backend
+  name: bodam-backend
 spec:
-  replicas: 3
+  replicas: 2
   selector:
     matchLabels:
-      app: fastapi
+      app: bodam-backend
   template:
     metadata:
       labels:
-        app: fastapi
+        app: bodam-backend
     spec:
       containers:
-      - name: fastapi
-        image: registry.digitalocean.com/bodam-registry/backend:latest
-        imagePullPolicy: Always
-        ports:
-        - containerPort: 8000
-          name: http
-        env:
-        - name: DATABASE_URL
-          valueFrom:
-            secretKeyRef:
-              name: db-credentials
-              key: url
-        - name: REDIS_URL
-          value: "redis://redis-service:6379/0"
-        - name: JWT_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: jwt-secret
-              key: secret
-        - name: TOSS_SECRET_KEY
-          valueFrom:
-            secretKeyRef:
-              name: api-keys
-              key: toss_secret_key
-        resources:
-          requests:
-            memory: "512Mi"
-            cpu: "500m"
-          limits:
-            memory: "1Gi"
-            cpu: "1000m"
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8000
-          initialDelaySeconds: 30
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 8000
-          initialDelaySeconds: 10
-          periodSeconds: 5
-          timeoutSeconds: 3
+        - name: backend
+          image: ghcr.io/bodam/backend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            # DB 연결
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: bodam-secrets
+                  key: database_url
+
+            # DB 연결 풀 설정
+            - name: DB_POOL_SIZE
+              value: "10"
+            - name: DB_MAX_OVERFLOW
+              value: "20"
+            - name: DB_POOL_TIMEOUT
+              value: "0.4"
+            - name: DB_POOL_PRE_PING
+              value: "true"
+            - name: DB_POOL_RECYCLE
+              value: "3600"
+
+            # Redis 연결
+            - name: REDIS_CACHE_URL
+              value: redis://redis-cache-service:6379/0
+            - name: CELERY_BROKER_URL
+              value: redis://redis-queue-service:6379/0
+            - name: CELERY_RESULT_BACKEND
+              value: redis://redis-queue-service:6379/1
+
+            # HTTP 연결 풀 설정
+            - name: HTTP_MAX_CONNECTIONS
+              value: "100"
+            - name: HTTP_CONNECT_TIMEOUT
+              value: "4.0"
+            - name: HTTP_READ_TIMEOUT
+              value: "8.0"
+            - name: RETRY_MAX_ATTEMPTS
+              value: "3"
+            - name: RETRY_INTERVAL
+              value: "4.0"
+
+            # 관측성 (OpenTelemetry)
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-collector.observability.svc.cluster.local:4318
+            - name: OTEL_SERVICE_NAME
+              value: backend-api
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.namespace=bodam,deployment.environment=production
+            - name: OTEL_TRACES_SAMPLER
+              value: always_on
+
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 20
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: fastapi-service
-  namespace: bodam
+  name: bodam-backend
 spec:
   selector:
-    app: fastapi
+    app: bodam-backend
   ports:
-  - protocol: TCP
-    port: 8000
-    targetPort: 8000
+    - name: http
+      port: 80
+      targetPort: 8000
   type: ClusterIP
 ```
 
 ---
 
-### 3. Static NGINX Deployment
+### 3. NGINX Deployment (TLS 터미네이션 + 정적 파일 전용)
+
+**역할**: API 라우팅은 Kong Gateway가 담당하며, NGINX는 TLS 터미네이션과 정적 파일 서빙만 수행
 
 ```yaml
-# k8s/static-nginx-deployment.yaml
+# infra/k8s/nginx/nginx-configmap.yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: nginx-static-config
-  namespace: bodam
+  name: nginx-config
 data:
   nginx.conf: |
     user nginx;
@@ -493,23 +785,56 @@ data:
       tcp_nopush on;
       keepalive_timeout 65;
       gzip on;
+      gzip_types text/plain text/css application/json application/javascript text/xml application/xml;
 
+      # HTTPS 서버 (TLS 터미네이션)
       server {
-        listen 80;
-        server_name _;
+        listen 443 ssl http2;
+        server_name bodam.kr api.bodam.kr;
 
-        # 업로드된 파일 서빙
-        location /media/ {
-          alias /data/media/;
+        # TLS 설정
+        ssl_certificate /etc/nginx/ssl/tls.crt;
+        ssl_certificate_key /etc/nginx/ssl/tls.key;
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_ciphers HIGH:!aNULL:!MD5;
+        ssl_prefer_server_ciphers on;
+
+        # 보안 헤더
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+
+        # API 요청 → Kong Gateway로 프록시
+        location /api/ {
+          proxy_pass http://kong-proxy-service:8000;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+          proxy_http_version 1.1;
+          proxy_set_header Connection "";
+        }
+
+        # 정적 파일 직접 서빙 (Kong 우회)
+        location /static/ {
+          alias /var/www/static/;
           expires 1y;
           add_header Cache-Control "public, immutable";
           add_header Access-Control-Allow-Origin "*";
           autoindex off;
         }
 
+        # 미디어 파일 서빙
+        location /media/ {
+          alias /var/www/media/;
+          expires 30d;
+          add_header Cache-Control "public";
+          autoindex off;
+        }
+
         # 영수증 PDF 서빙
         location /receipts/ {
-          alias /data/receipts/;
+          alias /var/www/receipts/;
           expires 30d;
           add_header Cache-Control "public";
           add_header Content-Disposition "attachment";
@@ -520,6 +845,16 @@ data:
           access_log off;
           return 200 "healthy\n";
           add_header Content-Type text/plain;
+        }
+      }
+
+      # HTTP → HTTPS 리다이렉트
+      server {
+        listen 80;
+        server_name bodam.kr api.bodam.kr;
+
+        location / {
+          return 301 https://$host$request_uri;
         }
       }
     }
@@ -1264,12 +1599,47 @@ kubectl apply -f fastapi-v2-deployment.yaml
 
 이 아키텍처는 **확장성을 고려한 프로덕션 환경**입니다:
 
-✅ **Kong API Gateway**: 외부 파트너 API, Rate Limiting, 인증
-✅ **NGINX Ingress**: 내부 라우팅, 정적 파일 서빙 분리
-✅ **FastAPI Pod**: 순수 비즈니스 로직만 처리
-✅ **Static NGINX Pod**: 파일 서빙 전담
-✅ **Auto-scaling**: 트래픽 증가 시 자동 확장
+### 계층별 역할
 
-**문서 버전**: 1.0.0
-**최종 업데이트**: 2025-10-01
+✅ **NGINX (외부 진입점)**
+  - TLS 터미네이션 (HTTPS 처리)
+  - 정적 파일 직접 서빙 (/static/, /media/, /receipts/)
+  - API 요청을 Kong Gateway로 프록시
+
+✅ **Kong Gateway (API 게이트웨이)**
+  - API 라우팅 및 버전 관리
+  - 인증 및 권한 검증
+  - Rate Limiting (사용자별/API별)
+  - CORS, 로깅, 모니터링
+
+✅ **FastAPI Pod (애플리케이션)**
+  - 순수 비즈니스 로직만 처리
+  - DB/HTTP 연결 풀 최적화
+  - OpenTelemetry 트레이싱
+
+✅ **Selenium Crawler (동적 크롤러)**
+  - JavaScript 렌더링 콘텐츠 수집
+  - 브라우저 인스턴스 풀링
+
+✅ **Auto-scaling**: HPA를 통한 트래픽 기반 자동 확장
+
+---
+
+## 주요 변경 이력
+
+### v2.0.0 (2025-10-26)
+- Kong Gateway 3.5 DB-less 모드로 전환
+- Selenium 4.15+ 동적 크롤러 추가
+- DB/HTTP 연결 풀 최적화 설정 추가
+- OpenTelemetry 관측성 강화
+- NGINX 역할 재정의 (TLS + 정적 파일 전용)
+
+### v1.0.0 (2025-10-01)
+- 최초 배포 가이드 작성
+- Kong Gateway + NGINX Ingress 아키텍처
+
+---
+
+**문서 버전**: 2.0.0
+**최종 업데이트**: 2025-10-26
 **작성자**: Claude Sonnet 4.5

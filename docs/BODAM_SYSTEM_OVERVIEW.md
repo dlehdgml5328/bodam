@@ -378,7 +378,7 @@ class Donation(Base):
 **아키텍처**:
 ```mermaid
 flowchart TD
-    A[Celery Beat Scheduler<br/>5분마다 실행] --> B[Selenium Crawler Worker]
+    A[Celery Beat Scheduler<br/>2시간마다 실행] --> B[Selenium Crawler Worker]
 
     B --> C[국가화재정보시스템<br/>NFDS 로그인]
     C --> D[BeautifulSoup4<br/>테이블 파싱]
@@ -405,7 +405,7 @@ flowchart TD
     N --> P
     O --> P
 
-    P --> Q{score >= 70?}
+    P --> Q{score >= 60?}
     Q -->|Yes| R[news_matches 저장]
     Q -->|No| S[버림]
 
@@ -882,9 +882,9 @@ class MatcherState:
 
 ```mermaid
 graph LR
-    A[1. 키워드 추출<br/>문자열 파싱] -->|비용 절감| B[2-3. API 검색<br/>Naver + YouTube]
-    B -->|핵심| C[4. 관련성 평가<br/>✅ Llama 3.3]
-    C --> D[5. DB 저장]
+    A[키워드 추출<br/>문자열 파싱] -->|비용 절감| B[API 검색<br/>Naver + YouTube]
+    B -->|핵심| C[관련성 평가<br/>✅ Llama 3.3]
+    C --> D[DB 저장]
 
     style A fill:#e8f5e9
     style C fill:#fff9c4

@@ -211,7 +211,7 @@ Kubernetes (DigitalOcean)
 - FastAPI
 - SQLAlchemy 2.0 (Async)
 - Celery + Redis
-- BeautifulSoup4 (크롤링)
+- Selenium + BeautifulSoup4 (크롤링)
 - LangGraph (워크플로우)
 - Together AI (Llama 3.3 70B)
 - Naver Search API
