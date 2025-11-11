@@ -78,6 +78,8 @@ ignore = [
     "I001",  # Import sorting (수동 관리)
     "F401",  # Unused imports (추후 정리)
     "F811",  # Redefinition of unused (추후 정리)
+    "F821",  # Undefined name (지연 import 사용)
+    "B904",  # Raise from (Celery retry 패턴)
 ]
 
 [tool.ruff.lint.isort]
