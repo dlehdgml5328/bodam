@@ -198,13 +198,17 @@ jobs:
 
       - name: 애플리케이션 Secrets 생성
         run: |
+          # Secret이 존재하면 삭제 후 재생성
+          kubectl delete secret bodam-secrets \
+            --namespace=${{ steps.env.outputs.namespace }} \
+            --ignore-not-found=true
+
           kubectl create secret generic bodam-secrets \
             --from-literal=database-url=${{ secrets.DATABASE_URL }} \
             --from-literal=jwt-secret=${{ secrets.JWT_SECRET_KEY }} \
             --from-literal=together-api-key=${{ secrets.TOGETHER_AI_API_KEY }} \
             --from-literal=admin-secret-key=${{ secrets.ADMIN_SECRET_KEY }} \
-            --namespace=${{ steps.env.outputs.namespace }} \
-            --dry-run=client -o yaml | kubectl apply -f -
+            --namespace=${{ steps.env.outputs.namespace }}
 
       - name: 이미지 태그 업데이트
         run: |
