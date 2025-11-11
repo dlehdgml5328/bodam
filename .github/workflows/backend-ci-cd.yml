@@ -205,25 +205,67 @@ jobs:
 
       - name: 이미지 태그 업데이트
         run: |
-          sed -i "s|image: bodam/backend:latest|image: ${{ needs.build-and-push.outputs.image_tag }}|g" infra/k8s/backend/backend-deployment.yaml
-          sed -i "s|namespace: bodam|namespace: ${{ steps.env.outputs.namespace }}|g" infra/k8s/backend/*.yaml
+          # Backend deployment v2 (Redis 3개 분리 구조)
+          sed -i "s|image: registry.digitalocean.com/bodam/backend:latest|image: ${{ needs.build-and-push.outputs.image_tag }}|g" infra/k8s/backend/backend-deployment-v2.yaml
+          # Celery deployments
+          sed -i "s|image: registry.digitalocean.com/bodam/backend:latest|image: ${{ needs.build-and-push.outputs.image_tag }}|g" infra/k8s/celery/*.yaml
 
-      - name: Kubernetes 리소스 배포
+      - name: Redis 배포 (3개 분리)
         run: |
-          kubectl apply -f infra/k8s/backend/configmap.yaml -n ${{ steps.env.outputs.namespace }}
-          kubectl apply -f infra/k8s/backend/backend-deployment.yaml -n ${{ steps.env.outputs.namespace }}
-          kubectl apply -f infra/k8s/backend/backend-hpa.yaml -n ${{ steps.env.outputs.namespace }}
-          kubectl apply -f infra/k8s/backend/celery-worker-hpa.yaml -n ${{ steps.env.outputs.namespace }}
+          echo "📦 Redis 3개 배포..."
+          kubectl apply -f infra/k8s/redis/redis-cache-deployment.yaml -n ${{ steps.env.outputs.namespace }}
+          kubectl apply -f infra/k8s/redis/redis-queue-deployment.yaml -n ${{ steps.env.outputs.namespace }}
+          kubectl apply -f infra/k8s/redis/redis-semantic-deployment.yaml -n ${{ steps.env.outputs.namespace }}
+
+      - name: Backend 배포
+        run: |
+          echo "🚀 Backend 배포..."
+          kubectl apply -f infra/k8s/backend/configmap.yaml -n ${{ steps.env.outputs.namespace }} || echo "ConfigMap 없음"
+          kubectl apply -f infra/k8s/backend/backend-deployment-v2.yaml -n ${{ steps.env.outputs.namespace }}
+
+      - name: Celery Workers 배포 (3개 분리)
+        run: |
+          echo "⚙️ Celery Workers 배포..."
+          kubectl apply -f infra/k8s/celery/celery-worker-deployment.yaml -n ${{ steps.env.outputs.namespace }}
+          kubectl apply -f infra/k8s/celery/celery-worker-news-deployment.yaml -n ${{ steps.env.outputs.namespace }}
+          kubectl apply -f infra/k8s/celery/celery-beat-deployment.yaml -n ${{ steps.env.outputs.namespace }}
+
+      - name: HPA 배포
+        run: |
+          echo "📈 HPA 배포..."
+          kubectl apply -f infra/k8s/backend/hpa.yaml -n ${{ steps.env.outputs.namespace }} || echo "HPA 없음"
+          kubectl apply -f infra/k8s/backend/celery-worker-hpa.yaml -n ${{ steps.env.outputs.namespace }} || echo "Celery HPA 없음"
 
       - name: 배포 상태 확인
         run: |
+          echo "✅ Backend 배포 상태..."
           kubectl rollout status deployment/bodam-backend -n ${{ steps.env.outputs.namespace }} --timeout=5m
+
+          echo "✅ Celery Worker 배포 상태..."
+          kubectl rollout status deployment/celery-worker -n ${{ steps.env.outputs.namespace }} --timeout=5m || echo "Celery worker rollout check failed"
+
+          echo "✅ Celery News Worker 배포 상태..."
+          kubectl rollout status deployment/celery-worker-news -n ${{ steps.env.outputs.namespace }} --timeout=5m || echo "Celery news worker rollout check failed"
 
       - name: Pod 상태 확인
         if: always()
         run: |
+          echo "📋 전체 Pod 상태..."
+          kubectl get pods -n ${{ steps.env.outputs.namespace }}
+
+          echo ""
+          echo "📋 Backend Pods..."
           kubectl get pods -n ${{ steps.env.outputs.namespace }} -l app=bodam-backend
-          kubectl describe pods -n ${{ steps.env.outputs.namespace }} -l app=bodam-backend
+
+          echo ""
+          echo "📋 Celery Worker Pods..."
+          kubectl get pods -n ${{ steps.env.outputs.namespace }} -l component=worker
+
+          echo ""
+          echo "📋 Redis Pods..."
+          kubectl get pods -n ${{ steps.env.outputs.namespace }} -l component=cache
+          kubectl get pods -n ${{ steps.env.outputs.namespace }} -l component=queue
+          kubectl get pods -n ${{ steps.env.outputs.namespace }} -l component=semantic
 
   smoke-test:
     name: 스모크 테스트
@@ -234,10 +276,12 @@ jobs:
       - name: 환경 변수 설정
         id: env
         run: |
+          # Production만 지원 (donghee 브랜치)
           if [ "${{ github.ref }}" == "refs/heads/donghee" ]; then
-            echo "api_url=${{ secrets.PRODUCTION_API_URL }}" >> $GITHUB_OUTPUT
+            echo "api_url=https://api.bodam.website" >> $GITHUB_OUTPUT
           else
-            echo "api_url=${{ secrets.PREVIEW_API_URL }}" >> $GITHUB_OUTPUT
+            # Preview는 아직 미구성
+            echo "api_url=https://api.bodam.website" >> $GITHUB_OUTPUT
           fi
 
       - name: Health Check 확인

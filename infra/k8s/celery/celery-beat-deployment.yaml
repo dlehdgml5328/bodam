@@ -1,0 +1,76 @@
+# Celery Beat - 스케줄러 (단일 인스턴스만 실행)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-beat
+  labels:
+    app: celery-beat
+    component: scheduler
+spec:
+  replicas: 1  # Beat는 반드시 1개만 실행
+  selector:
+    matchLabels:
+      app: celery-beat
+  template:
+    metadata:
+      labels:
+        app: celery-beat
+        component: scheduler
+    spec:
+      containers:
+      - name: celery-beat
+        image: registry.digitalocean.com/bodam/backend:latest
+        imagePullPolicy: Always
+        command:
+        - celery
+        - -A
+        - src.worker.celery_app
+        - beat
+        - --loglevel=info
+        env:
+        # Database
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: bodam-secrets
+              key: database-url
+
+        # Redis
+        - name: REDIS_CACHE_URL
+          value: "redis://redis-cache:6379/0"
+        - name: REDIS_QUEUE_URL
+          value: "redis://redis-queue:6379/0"
+
+        # Celery
+        - name: CELERY_BROKER_URL
+          value: "redis://redis-queue:6379/0"
+        - name: CELERY_RESULT_BACKEND
+          value: "redis://redis-queue:6379/1"
+
+        # Logging
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: LOG_FORMAT
+          value: "json"
+
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+
+        # Beat는 헬스체크가 어려우므로 간단한 프로세스 체크
+        livenessProbe:
+          exec:
+            command:
+            - pgrep
+            - celery
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+      imagePullSecrets:
+      - name: regcred

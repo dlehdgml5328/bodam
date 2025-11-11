@@ -1,0 +1,113 @@
+# Celery Main Worker - 사건 처리, 디스패치 이벤트
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-worker
+  labels:
+    app: celery-worker
+    component: worker
+    queue: main
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: celery-worker
+      queue: main
+  template:
+    metadata:
+      labels:
+        app: celery-worker
+        component: worker
+        queue: main
+    spec:
+      containers:
+      - name: celery-worker
+        image: registry.digitalocean.com/bodam/backend:latest
+        imagePullPolicy: Always
+        command:
+        - celery
+        - -A
+        - src.worker.celery_app
+        - worker
+        - --loglevel=info
+        - --queues=celery,critical
+        - --concurrency=4
+        - --max-tasks-per-child=100
+        env:
+        # Database
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: bodam-secrets
+              key: database-url
+
+        # Redis 3종
+        - name: REDIS_CACHE_URL
+          value: "redis://redis-cache:6379/0"
+        - name: REDIS_QUEUE_URL
+          value: "redis://redis-queue:6379/0"
+        - name: REDIS_SEMANTIC_URL
+          value: "redis://redis-semantic:6379/2"
+
+        # Celery
+        - name: CELERY_BROKER_URL
+          value: "redis://redis-queue:6379/0"
+        - name: CELERY_RESULT_BACKEND
+          value: "redis://redis-queue:6379/1"
+
+        # External APIs
+        - name: NAVER_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: bodam-secrets
+              key: naver-client-id
+              optional: true
+        - name: NAVER_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: bodam-secrets
+              key: naver-client-secret
+              optional: true
+        - name: YOUTUBE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: bodam-secrets
+              key: youtube-api-key
+              optional: true
+        - name: TOGETHER_AI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: bodam-secrets
+              key: together-api-key
+        - name: TOGETHER_AI_MODEL
+          value: "meta-llama/Llama-3.3-70B-Instruct-Turbo"
+
+        # Logging
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: LOG_FORMAT
+          value: "json"
+
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+
+        livenessProbe:
+          exec:
+            command:
+            - celery
+            - -A
+            - src.worker.celery_app
+            - inspect
+            - ping
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+
+      imagePullSecrets:
+      - name: regcred

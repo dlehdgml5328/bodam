@@ -1,0 +1,113 @@
+# Celery News Matcher Worker - AI/Semantic Matching
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-worker-news
+  labels:
+    app: celery-worker-news
+    component: worker
+    queue: news
+spec:
+  replicas: 1  # AI 작업은 리소스 집약적이므로 1개로 시작
+  selector:
+    matchLabels:
+      app: celery-worker-news
+      queue: news
+  template:
+    metadata:
+      labels:
+        app: celery-worker-news
+        component: worker
+        queue: news
+    spec:
+      containers:
+      - name: celery-worker-news
+        image: registry.digitalocean.com/bodam/backend:latest
+        imagePullPolicy: Always
+        command:
+        - celery
+        - -A
+        - src.worker.celery_app
+        - worker
+        - --loglevel=info
+        - --queues=news_matching
+        - --concurrency=2  # AI 작업은 concurrency 낮게
+        - --max-tasks-per-child=50
+        env:
+        # Database
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: bodam-secrets
+              key: database-url
+
+        # Redis 3종
+        - name: REDIS_CACHE_URL
+          value: "redis://redis-cache:6379/0"
+        - name: REDIS_QUEUE_URL
+          value: "redis://redis-queue:6379/0"
+        - name: REDIS_SEMANTIC_URL
+          value: "redis://redis-semantic:6379/2"
+
+        # Celery
+        - name: CELERY_BROKER_URL
+          value: "redis://redis-queue:6379/0"
+        - name: CELERY_RESULT_BACKEND
+          value: "redis://redis-queue:6379/1"
+
+        # External APIs (AI 작업에 필요)
+        - name: NAVER_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: bodam-secrets
+              key: naver-client-id
+              optional: true
+        - name: NAVER_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: bodam-secrets
+              key: naver-client-secret
+              optional: true
+        - name: YOUTUBE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: bodam-secrets
+              key: youtube-api-key
+              optional: true
+        - name: TOGETHER_AI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: bodam-secrets
+              key: together-api-key
+        - name: TOGETHER_AI_MODEL
+          value: "meta-llama/Llama-3.3-70B-Instruct-Turbo"
+
+        # Logging
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: LOG_FORMAT
+          value: "json"
+
+        resources:
+          requests:
+            memory: "1Gi"  # AI 작업은 메모리 많이 필요
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+
+        livenessProbe:
+          exec:
+            command:
+            - celery
+            - -A
+            - src.worker.celery_app
+            - inspect
+            - ping
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+
+      imagePullSecrets:
+      - name: regcred

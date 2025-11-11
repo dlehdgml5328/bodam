@@ -1,0 +1,102 @@
+# Redis Queue - Celery 브로커 (AOF + RDB 영속성)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-queue
+  labels:
+    app: redis-queue
+    component: queue
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-queue
+  template:
+    metadata:
+      labels:
+        app: redis-queue
+        component: queue
+    spec:
+      containers:
+      - name: redis
+        image: redis:7.2-alpine
+        command:
+        - redis-server
+        - --maxmemory
+        - "1gb"
+        - --maxmemory-policy
+        - noeviction
+        - --appendonly
+        - "yes"
+        - --appendfsync
+        - everysec
+        - --save
+        - "60 1"
+        - --loglevel
+        - warning
+        ports:
+        - containerPort: 6379
+          name: redis
+        volumeMounts:
+        - name: redis-queue-data
+          mountPath: /data
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+      volumes:
+      - name: redis-queue-data
+        persistentVolumeClaim:
+          claimName: redis-queue-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-queue
+  labels:
+    app: redis-queue
+spec:
+  selector:
+    app: redis-queue
+  ports:
+  - port: 6379
+    targetPort: 6379
+    protocol: TCP
+    name: redis
+  type: ClusterIP
+
+---
+# PersistentVolumeClaim for Redis Queue
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-queue-pvc
+  labels:
+    app: redis-queue
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: do-block-storage  # DigitalOcean Block Storage

@@ -1,0 +1,209 @@
+# Backend Deployment (FastAPI만) - Redis 3개 분리 구조
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bodam-backend
+  labels:
+    app: bodam-backend
+    tier: backend
+    version: v2
+spec:
+  replicas: 3  # HA를 위해 3개 replica
+  selector:
+    matchLabels:
+      app: bodam-backend
+  template:
+    metadata:
+      labels:
+        app: bodam-backend
+        tier: backend
+    spec:
+      containers:
+      - name: fastapi
+        image: registry.digitalocean.com/bodam/backend:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+        command:
+        - uvicorn
+        - src.main:app
+        - --host
+        - "0.0.0.0"
+        - --port
+        - "8080"
+        - --workers
+        - "4"  # Uvicorn workers
+        env:
+        # Database
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: bodam-secrets
+              key: database-url
+
+        # Redis 3종 분리
+        - name: REDIS_CACHE_URL
+          value: "redis://redis-cache:6379/0"
+        - name: REDIS_QUEUE_URL
+          value: "redis://redis-queue:6379/0"
+        - name: REDIS_SEMANTIC_URL
+          value: "redis://redis-semantic:6379/2"
+
+        # Celery (Queue Redis 사용)
+        - name: CELERY_BROKER_URL
+          value: "redis://redis-queue:6379/0"
+        - name: CELERY_RESULT_BACKEND
+          value: "redis://redis-queue:6379/1"
+
+        # Security
+        - name: JWT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: bodam-secrets
+              key: jwt-secret
+        - name: JWT_ALGORITHM
+          value: "HS256"
+        - name: ACCESS_TOKEN_TTL
+          value: "15"
+        - name: REFRESH_TOKEN_TTL
+          value: "10080"
+
+        # External APIs
+        - name: NAVER_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: bodam-secrets
+              key: naver-client-id
+              optional: true
+        - name: NAVER_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: bodam-secrets
+              key: naver-client-secret
+              optional: true
+        - name: YOUTUBE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: bodam-secrets
+              key: youtube-api-key
+              optional: true
+        - name: TOGETHER_AI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: bodam-secrets
+              key: together-api-key
+        - name: TOGETHER_AI_MODEL
+          value: "meta-llama/Llama-3.3-70B-Instruct-Turbo"
+        - name: TOSS_CLIENT_KEY
+          valueFrom:
+            secretKeyRef:
+              name: bodam-secrets
+              key: toss-client-key
+              optional: true
+        - name: TOSS_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: bodam-secrets
+              key: toss-secret-key
+              optional: true
+
+        # CORS & Cookies
+        - name: ALLOWED_ORIGINS
+          value: "https://bodam.com,https://preview.bodam.com"
+        - name: COOKIE_DOMAIN
+          value: ".bodam.com"
+        - name: COOKIE_SECURE
+          value: "true"
+        - name: COOKIE_SAMESITE
+          value: "Lax"
+
+        # Feature Flags
+        - name: DEBUG
+          value: "false"
+        - name: ENABLE_RATE_LIMITING
+          value: "true"
+        - name: ENABLE_MONITORING
+          value: "true"
+
+        # Environment
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: LOG_FORMAT
+          value: "json"
+
+        # DB/HTTP Pool Settings (from CLAUDE.md)
+        - name: DB_POOL_SIZE
+          value: "10"
+        - name: DB_MAX_OVERFLOW
+          value: "20"
+        - name: DB_POOL_RECYCLE
+          value: "3600"
+        - name: DB_POOL_PRE_PING
+          value: "true"
+        - name: DB_POOL_TIMEOUT
+          value: "0.4"
+
+        - name: HTTP_MAX_CONNECTIONS
+          value: "100"
+        - name: HTTP_MAX_KEEPALIVE_CONNECTIONS
+          value: "20"
+        - name: HTTP_KEEPALIVE_EXPIRY
+          value: "60.0"
+        - name: HTTP_CONNECT_TIMEOUT
+          value: "4.0"
+        - name: HTTP_READ_TIMEOUT
+          value: "8.0"
+
+        - name: RETRY_MAX_ATTEMPTS
+          value: "3"
+        - name: RETRY_INTERVAL
+          value: "4.0"
+
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+
+      imagePullSecrets:
+      - name: regcred
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bodam-backend-service
+  labels:
+    app: bodam-backend
+spec:
+  selector:
+    app: bodam-backend
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  type: ClusterIP

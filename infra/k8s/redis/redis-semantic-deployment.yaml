@@ -1,0 +1,91 @@
+# Redis Semantic - Vector Store (Redis Stack)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-semantic
+  labels:
+    app: redis-semantic
+    component: semantic
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-semantic
+  template:
+    metadata:
+      labels:
+        app: redis-semantic
+        component: semantic
+    spec:
+      containers:
+      - name: redis-stack
+        image: redis/redis-stack-server:latest
+        env:
+        - name: REDIS_ARGS
+          value: "--maxmemory 2gb --maxmemory-policy noeviction --save 300 1 --appendonly yes"
+        ports:
+        - containerPort: 6379
+          name: redis
+        volumeMounts:
+        - name: redis-semantic-data
+          mountPath: /data
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "200m"
+          limits:
+            memory: "2Gi"
+            cpu: "500m"
+        livenessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+      volumes:
+      - name: redis-semantic-data
+        persistentVolumeClaim:
+          claimName: redis-semantic-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-semantic
+  labels:
+    app: redis-semantic
+spec:
+  selector:
+    app: redis-semantic
+  ports:
+  - port: 6379
+    targetPort: 6379
+    protocol: TCP
+    name: redis
+  type: ClusterIP
+
+---
+# PersistentVolumeClaim for Redis Semantic
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-semantic-pvc
+  labels:
+    app: redis-semantic
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi  # Vector Store는 더 큰 용량 필요
+  storageClassName: do-block-storage  # DigitalOcean Block Storage
