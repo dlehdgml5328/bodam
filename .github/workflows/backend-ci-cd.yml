@@ -201,7 +201,10 @@ jobs:
           # Secret이 존재하면 삭제 후 재생성
           kubectl delete secret bodam-secrets \
             --namespace=${{ steps.env.outputs.namespace }} \
-            --ignore-not-found=true
+            --ignore-not-found=true || true
+
+          # 삭제 완료 대기
+          sleep 2
 
           kubectl create secret generic bodam-secrets \
             --from-literal=database-url=${{ secrets.DATABASE_URL }} \
