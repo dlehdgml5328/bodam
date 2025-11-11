@@ -73,6 +73,9 @@ ignore = [
     "E402",  # Module level import not at top (uvloop 설정 때문)
     "E731",  # Lambda assignment (Pydantic alias_generator)
     "B007",  # Loop variable not used (의도적 언패킹)
+    "F541",  # f-string without any placeholders (의도적 사용)
+    "Q000",  # Single quotes (일관성 없는 코드베이스)
+    "I001",  # Import sorting (수동 관리)
 ]
 
 [tool.ruff.lint.isort]
