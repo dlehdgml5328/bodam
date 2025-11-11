@@ -2,3 +2,4 @@
 
 FastAPI backend for the BoDam firefighter support platform.
 # Trigger deployment
+# JWT env var fixed
