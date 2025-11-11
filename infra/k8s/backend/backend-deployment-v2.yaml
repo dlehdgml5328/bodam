@@ -57,7 +57,7 @@ spec:
           value: "redis://redis-queue:6379/1"
 
         # Security
-        - name: JWT_SECRET_KEY
+        - name: JWT_SECRET
           valueFrom:
             secretKeyRef:
               name: bodam-secrets
