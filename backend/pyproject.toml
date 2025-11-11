@@ -76,6 +76,8 @@ ignore = [
     "F541",  # f-string without any placeholders (의도적 사용)
     "Q000",  # Single quotes (일관성 없는 코드베이스)
     "I001",  # Import sorting (수동 관리)
+    "F401",  # Unused imports (추후 정리)
+    "F811",  # Redefinition of unused (추후 정리)
 ]
 
 [tool.ruff.lint.isort]
