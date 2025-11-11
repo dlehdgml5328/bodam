@@ -76,3 +76,11 @@ dist/
 # Sensitive setup files
 SETUP_COMPLETE.md
 backend/firebase-service-account.json
+
+# Vercel
+.vercel/
+frontend/.vercel/
+
+# Monitoring
+infra/grafana/data/
+infra/grafana/*.db
