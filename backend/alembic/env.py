@@ -42,7 +42,8 @@ def do_run_migrations(connection: Connection) -> None:
 
 def _sync_database_url(url: str) -> str:
     if url.startswith("postgresql+asyncpg"):
-        return url.replace("postgresql+asyncpg", "postgresql")
+        # psycopg (v3) 명시적 지정 - psycopg2가 설치되지 않았으므로
+        return url.replace("postgresql+asyncpg", "postgresql+psycopg")
     return url
 
 
