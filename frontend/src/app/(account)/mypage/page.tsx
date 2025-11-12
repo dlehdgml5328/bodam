@@ -104,24 +104,32 @@ export default function MyPage() {
       window.history.replaceState({}, '', '/mypage');
     }
 
-    // 사용자 타입과 단체 정보 업데이트
-    const storedUserTypeRaw = localStorage.getItem('userType');
-    const storedUserType: 'individual' | 'group' =
-      storedUserTypeRaw === 'group' ? 'group' : 'individual';
-    const storedGroupNumber = localStorage.getItem('groupNumber') || '';
-    const storedUserNickname = localStorage.getItem('userNickname') || '소방이';
+    // 사용자 타입과 단체 정보 업데이트 (클라이언트 전용)
+    if (typeof window !== 'undefined') {
+      const storedUserTypeRaw = localStorage.getItem('userType');
+      const storedUserType: 'individual' | 'group' =
+        storedUserTypeRaw === 'group' ? 'group' : 'individual';
+      const storedGroupNumber = localStorage.getItem('groupNumber') || '';
+      const storedUserNickname = localStorage.getItem('userNickname') || '소방이';
+      const storedProfileImage = localStorage.getItem('userProfileImage') || '';
 
-    setUserType(storedUserType);
-    setGroupNumber(storedGroupNumber);
-    
-    // 단체 로그인인 경우 사용자 정보를 단체 정보로 업데이트
-    if (storedUserType === 'group') {
-      setUserInfo(prev => ({
-        ...prev,
-        name: storedUserNickname, // 단체명으로 설정
-        nickname: storedUserNickname,
-        profileImage: '' // 단체는 프로필 이미지 없음
-      }));
+      setUserType(storedUserType);
+      setGroupNumber(storedGroupNumber);
+
+      // 단체 로그인인 경우 사용자 정보를 단체 정보로 업데이트
+      if (storedUserType === 'group') {
+        setUserInfo(prev => ({
+          ...prev,
+          name: storedUserNickname, // 단체명으로 설정
+          nickname: storedUserNickname,
+          profileImage: '' // 단체는 프로필 이미지 없음
+        }));
+      } else {
+        setUserInfo(prev => ({
+          ...prev,
+          profileImage: storedProfileImage
+        }));
+      }
     }
   }, []);
 
@@ -174,7 +182,7 @@ export default function MyPage() {
     rank: 0,
     level: '',
     badge: '',
-    profileImage: localStorage.getItem('userProfileImage') || ''
+    profileImage: ''
   });
 
   // 데이터 로딩 - API에서 기부 내역과 정기 기부 가져오기
