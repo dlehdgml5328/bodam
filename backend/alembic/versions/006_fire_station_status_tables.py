@@ -14,10 +14,10 @@ depends_on = None
 
 
 _priority_enum = sa.Enum(
-    "high", "medium", "low", name="emergency_priority_level"
+    "high", "medium", "low", name="emergency_priority_level", create_type=False
 )
 _status_enum = sa.Enum(
-    "dispatching", "suppressing", "standby", "maintenance", name="fire_station_live_status"
+    "dispatching", "suppressing", "standby", "maintenance", name="fire_station_live_status", create_type=False
 )
 
 
