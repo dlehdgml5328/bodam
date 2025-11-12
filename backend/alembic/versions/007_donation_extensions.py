@@ -13,26 +13,28 @@ branch_labels = None
 depends_on = None
 
 
-_donation_mode = sa.Enum(
-    "single", "multiple", name="donation_mode"
-)
-_allocation_type = sa.Enum(
-    "primary", "split", "each", "custom", name="donation_allocation_type"
-)
-_subscription_status = sa.Enum(
-    "active", "paused", "cancelled", name="donation_subscription_status"
-)
-_subscription_cycle = sa.Enum(
-    "monthly", "quarterly", "yearly", name="donation_subscription_cycle"
-)
-
-
 def upgrade() -> None:
-    bind = op.get_bind()
-    _donation_mode.create(bind, checkfirst=True)
-    _allocation_type.create(bind, checkfirst=True)
-    _subscription_status.create(bind, checkfirst=True)
-    _subscription_cycle.create(bind, checkfirst=True)
+    # Create ENUM types using raw SQL with DO block
+    conn = op.get_bind()
+    conn.execute(sa.text("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'donation_mode') THEN
+                CREATE TYPE donation_mode AS ENUM ('single', 'multiple');
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'donation_allocation_type') THEN
+                CREATE TYPE donation_allocation_type AS ENUM ('primary', 'split', 'each', 'custom');
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'donation_subscription_status') THEN
+                CREATE TYPE donation_subscription_status AS ENUM ('active', 'paused', 'cancelled');
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'donation_subscription_cycle') THEN
+                CREATE TYPE donation_subscription_cycle AS ENUM ('monthly', 'quarterly', 'yearly');
+            END IF;
+        END
+        $$;
+    """))
+    conn.commit()
 
     op.create_table(
         "donation_subscriptions",
@@ -49,8 +51,8 @@ def upgrade() -> None:
             sa.ForeignKey("donations.id", ondelete="SET NULL"),
             nullable=True,
         ),
-        sa.Column("status", _subscription_status, nullable=False, server_default="active"),
-        sa.Column("cycle", _subscription_cycle, nullable=False),
+        sa.Column("status", sa.Text(), nullable=False, server_default="active"),
+        sa.Column("cycle", sa.Text(), nullable=False),
         sa.Column("amount", sa.Numeric(12, 2), nullable=False),
         sa.Column("currency", sa.String(length=3), nullable=False, server_default="KRW"),
         sa.Column("next_billing_at", sa.DateTime(timezone=True), nullable=True),
@@ -92,7 +94,7 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("amount", sa.Numeric(12, 2), nullable=False),
-        sa.Column("allocation_type", _allocation_type, nullable=False, server_default="primary"),
+        sa.Column("allocation_type", sa.Text(), nullable=False, server_default="primary"),
     )
     op.create_index(
         "ix_donation_allocations_station",
@@ -106,7 +108,7 @@ def upgrade() -> None:
     )
     op.add_column(
         "donations",
-        sa.Column("mode", _donation_mode, nullable=False, server_default="single"),
+        sa.Column("mode", sa.Text(), nullable=False, server_default="single"),
     )
     op.add_column(
         "donations",
@@ -160,6 +162,31 @@ def upgrade() -> None:
     op.execute("UPDATE donations SET mode = 'single' WHERE mode IS NULL")
     op.execute("UPDATE donations SET currency = 'KRW' WHERE currency IS NULL")
 
+    # Convert Text columns to ENUM types
+    conn.execute(sa.text("""
+        ALTER TABLE donation_subscriptions
+        ALTER COLUMN cycle TYPE donation_subscription_cycle USING cycle::donation_subscription_cycle;
+    """))
+    conn.execute(sa.text("""
+        ALTER TABLE donation_subscriptions
+        ALTER COLUMN status DROP DEFAULT,
+        ALTER COLUMN status TYPE donation_subscription_status USING status::donation_subscription_status,
+        ALTER COLUMN status SET DEFAULT 'active'::donation_subscription_status;
+    """))
+    conn.execute(sa.text("""
+        ALTER TABLE donation_allocations
+        ALTER COLUMN allocation_type DROP DEFAULT,
+        ALTER COLUMN allocation_type TYPE donation_allocation_type USING allocation_type::donation_allocation_type,
+        ALTER COLUMN allocation_type SET DEFAULT 'primary'::donation_allocation_type;
+    """))
+    conn.execute(sa.text("""
+        ALTER TABLE donations
+        ALTER COLUMN mode DROP DEFAULT,
+        ALTER COLUMN mode TYPE donation_mode USING mode::donation_mode,
+        ALTER COLUMN mode SET DEFAULT 'single'::donation_mode;
+    """))
+    conn.commit()
+
 
 def downgrade() -> None:
     op.drop_index("ix_donations_mode_status", table_name="donations")
@@ -183,8 +210,10 @@ def downgrade() -> None:
     op.drop_index("ix_donation_subscriptions_user_status", table_name="donation_subscriptions")
     op.drop_table("donation_subscriptions")
 
-    bind = op.get_bind()
-    _subscription_cycle.drop(bind, checkfirst=True)
-    _subscription_status.drop(bind, checkfirst=True)
-    _allocation_type.drop(bind, checkfirst=True)
-    _donation_mode.drop(bind, checkfirst=True)
+    # Drop ENUM types
+    conn = op.get_bind()
+    conn.execute(sa.text("DROP TYPE IF EXISTS donation_subscription_cycle CASCADE"))
+    conn.execute(sa.text("DROP TYPE IF EXISTS donation_subscription_status CASCADE"))
+    conn.execute(sa.text("DROP TYPE IF EXISTS donation_allocation_type CASCADE"))
+    conn.execute(sa.text("DROP TYPE IF EXISTS donation_mode CASCADE"))
+    conn.commit()
