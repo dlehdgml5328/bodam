@@ -13,14 +13,6 @@ branch_labels = None
 depends_on = None
 
 
-_priority_enum = sa.Enum(
-    "high", "medium", "low", name="emergency_priority_level", create_type=False
-)
-_status_enum = sa.Enum(
-    "dispatching", "suppressing", "standby", "maintenance", name="fire_station_live_status", create_type=False
-)
-
-
 def upgrade() -> None:
     # Create ENUM types using raw SQL with DO block to avoid conflicts
     conn = op.get_bind()
@@ -48,10 +40,10 @@ def upgrade() -> None:
             nullable=False,
             unique=True,
         ),
-        sa.Column("status", _status_enum, nullable=False),
+        sa.Column("status", sa.Enum('dispatching', 'suppressing', 'standby', 'maintenance', name='fire_station_live_status', create_type=False), nullable=False),
         sa.Column(
             "priority",
-            _priority_enum,
+            sa.Enum('high', 'medium', 'low', name='emergency_priority_level', create_type=False),
             nullable=False,
             server_default="medium",
         ),
@@ -107,6 +99,8 @@ def downgrade() -> None:
     )
     op.drop_table("fire_station_statuses")
 
-    bind = op.get_bind()
-    _status_enum.drop(bind, checkfirst=True)
-    _priority_enum.drop(bind, checkfirst=True)
+    # Drop ENUM types
+    conn = op.get_bind()
+    conn.execute(sa.text("DROP TYPE IF EXISTS fire_station_live_status CASCADE"))
+    conn.execute(sa.text("DROP TYPE IF EXISTS emergency_priority_level CASCADE"))
+    conn.commit()
