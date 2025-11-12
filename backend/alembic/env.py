@@ -42,7 +42,7 @@ def do_run_migrations(connection: Connection) -> None:
 
 def _sync_database_url(url: str) -> str:
     if url.startswith("postgresql+asyncpg"):
-        return url.replace("postgresql+asyncpg", "postgresql+psycopg")
+        return url.replace("postgresql+asyncpg", "postgresql")
     return url
 
 
