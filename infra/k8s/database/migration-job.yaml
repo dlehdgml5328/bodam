@@ -8,7 +8,7 @@ spec:
     spec:
       containers:
       - name: migration
-        image: registry.digitalocean.com/bodam/backend:production-02a5575b9d980cfb3d0b33ee2d919245f2483a91
+        image: registry.digitalocean.com/bodam/backend:production-943a88cb017f04ce8d42c5ef0cd7c77cb798286c
         command: ["alembic", "upgrade", "head"]
         env:
         - name: DATABASE_URL
