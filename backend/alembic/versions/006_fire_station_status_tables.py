@@ -40,10 +40,10 @@ def upgrade() -> None:
             nullable=False,
             unique=True,
         ),
-        sa.Column("status", sa.Enum('dispatching', 'suppressing', 'standby', 'maintenance', name='fire_station_live_status', create_type=False), nullable=False),
+        sa.Column("status", sa.Text(), nullable=False),
         sa.Column(
             "priority",
-            sa.Enum('high', 'medium', 'low', name='emergency_priority_level', create_type=False),
+            sa.Text(),
             nullable=False,
             server_default="medium",
         ),
@@ -84,6 +84,14 @@ def upgrade() -> None:
         "fire_station_active_incidents",
         ["incident_id"],
     )
+
+    # Alter columns to use ENUM types
+    conn.execute(sa.text("""
+        ALTER TABLE fire_station_statuses
+        ALTER COLUMN status TYPE fire_station_live_status USING status::fire_station_live_status,
+        ALTER COLUMN priority TYPE emergency_priority_level USING priority::emergency_priority_level;
+    """))
+    conn.commit()
 
 
 def downgrade() -> None:
