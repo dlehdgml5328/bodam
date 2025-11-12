@@ -88,8 +88,13 @@ def upgrade() -> None:
     # Alter columns to use ENUM types
     conn.execute(sa.text("""
         ALTER TABLE fire_station_statuses
-        ALTER COLUMN status TYPE fire_station_live_status USING status::fire_station_live_status,
-        ALTER COLUMN priority TYPE emergency_priority_level USING priority::emergency_priority_level;
+        ALTER COLUMN status TYPE fire_station_live_status USING status::fire_station_live_status;
+    """))
+    conn.execute(sa.text("""
+        ALTER TABLE fire_station_statuses
+        ALTER COLUMN priority DROP DEFAULT,
+        ALTER COLUMN priority TYPE emergency_priority_level USING priority::emergency_priority_level,
+        ALTER COLUMN priority SET DEFAULT 'medium'::emergency_priority_level;
     """))
     conn.commit()
 
