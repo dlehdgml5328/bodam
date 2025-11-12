@@ -674,19 +674,13 @@ export default function DonationsPage() {
       // 공통 필드 추가
       donationData = {
         ...donationData,
-        donorName: false 
-          ? (isAnonymous ? null?.name || '단체' : `${donorName} (${null?.name})`)
-          : (isAnonymous ? '익명' : donorName || '익명'),
+        donorName: isAnonymous ? '익명' : donorName || '익명',
         donorEmail: donorEmail,
         donorPhone: donorPhone,
         donorIdNumber: donorIdNumber,
         message: message,
         isAnonymous: isAnonymous,
         needReceipt: needReceipt,
-        false: false,
-        null: false ? null : null,
-        null: false ? null : null,
-        individualDonorName: false ? donorName : null,
         isRegularDonation: isRegularDonation,
         regularCycle: isRegularDonation ? regularCycle : null,
         startDate: isRegularDonation ? startDate : null,
@@ -729,9 +723,9 @@ export default function DonationsPage() {
       let orderName = '';
 
       if (donationMode === 'single') {
-        orderName = `${getSelectedFireStationName()} ${isRegularDonation ? '정기 ' : ''}기부${false ? ` (${null?.name})` : ''} (커피 ${getCupCount(getCurrentAmount())}잔)`;
+        orderName = `${getSelectedFireStationName()} ${isRegularDonation ? '정기 ' : ''}기부 (커피 ${getCupCount(getCurrentAmount())}잔)`;
       } else {
-        orderName = `${selectedFireStations.length}개 소방서 ${multipleType === 'split' ? '분할' : multipleType === 'each' ? '각각' : '개별'} ${isRegularDonation ? '정기 ' : ''}기부${false ? ` (${null?.name})` : ''} (총 커피 ${getCupCount(donationData.amount)}잔)`;
+        orderName = `${selectedFireStations.length}개 소방서 ${multipleType === 'split' ? '분할' : multipleType === 'each' ? '각각' : '개별'} ${isRegularDonation ? '정기 ' : ''}기부 (총 커피 ${getCupCount(donationData.amount)}잔)`;
       }
 
       if (isRegularDonation) {
@@ -2002,10 +1996,7 @@ export default function DonationsPage() {
                   <div>
                     <div className="text-sm text-gray-600">기부자명</div>
                     <div className="text-lg font-semibold text-gray-900">
-                      {false 
-                        ? (isAnonymous ? null?.name || '단체' : `${donorName} (${null?.name})`)
-                        : (isAnonymous ? '익명' : donorName || '익명')
-                      }
+                      {isAnonymous ? '익명' : donorName || '익명'}
                     </div>
                   </div>
                   <div>
