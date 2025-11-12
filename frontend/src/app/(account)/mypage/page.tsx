@@ -7,6 +7,12 @@ import Card from '@/components/base/Card';
 import Button from '@/components/base/Button';
 import { apiRequest, ApiError } from '@/lib/api';
 
+interface UpdatedUserResponse {
+  name: string;
+  phone: string;
+  id_number: string;
+}
+
 export default function MyPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'donations' | 'regular' | 'profile' | 'settings'>('donations');
@@ -577,7 +583,7 @@ export default function MyPage() {
         const updatedUser = await apiRequest('/auth/me', {
           method: 'PATCH',
           body: JSON.stringify(updateData),
-        });
+        }) as UpdatedUserResponse;
 
         // 상태 업데이트
         setUserInfo(prev => ({

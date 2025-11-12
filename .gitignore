@@ -84,3 +84,4 @@ frontend/.vercel/
 # Monitoring
 infra/grafana/data/
 infra/grafana/*.db
+.vercel
