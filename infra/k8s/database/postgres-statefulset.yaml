@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: postgres
-        image: pgvector/pgvector:pg16
+        image: postgis/postgis:16-3.4
         ports:
         - containerPort: 5432
           name: postgres
@@ -40,11 +40,11 @@ spec:
         
         resources:
           requests:
-            memory: "1Gi"
-            cpu: "500m"
+            memory: "256Mi"
+            cpu: "200m"
           limits:
-            memory: "4Gi"
-            cpu: "2000m"
+            memory: "512Mi"
+            cpu: "500m"
         
         livenessProbe:
           exec:
@@ -75,7 +75,7 @@ spec:
       accessModes: ["ReadWriteOnce"]
       resources:
         requests:
-          storage: 50Gi
+          storage: 10Gi
 
 ---
 apiVersion: v1
