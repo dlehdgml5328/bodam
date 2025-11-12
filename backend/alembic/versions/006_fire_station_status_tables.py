@@ -23,8 +23,18 @@ _status_enum = sa.Enum(
 
 def upgrade() -> None:
     bind = op.get_bind()
-    _priority_enum.create(bind, checkfirst=True)
-    _status_enum.create(bind, checkfirst=True)
+
+    # Check if ENUM types already exist before creating
+    conn = op.get_bind()
+    result = conn.execute(sa.text(
+        "SELECT typname FROM pg_type WHERE typname IN ('emergency_priority_level', 'fire_station_live_status')"
+    ))
+    existing_enums = {row[0] for row in result}
+
+    if 'emergency_priority_level' not in existing_enums:
+        _priority_enum.create(bind, checkfirst=False)
+    if 'fire_station_live_status' not in existing_enums:
+        _status_enum.create(bind, checkfirst=False)
 
     op.create_table(
         "fire_station_statuses",
