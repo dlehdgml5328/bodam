@@ -164,7 +164,7 @@ export default function DonationsPage() {
     const fetchFireStations = async () => {
       try {
         setIsLoadingStations(true);
-        const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+        const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://api.bodam.website';
         console.log('🔥 소방서 목록 API 호출:', `${apiBaseUrl}/stations?limit=1000`);
         const response = await fetch(`${apiBaseUrl}/stations?limit=1000`);
         if (!response.ok) {
@@ -188,7 +188,7 @@ export default function DonationsPage() {
   useEffect(() => {
     const fetchDonationStats = async () => {
       try {
-        const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+        const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://api.bodam.website';
         const response = await fetch(`${apiBaseUrl}/stats`);
         if (!response.ok) {
           throw new Error('통계 데이터 조회 실패');
@@ -211,7 +211,7 @@ export default function DonationsPage() {
   useEffect(() => {
     const fetchRecentDonations = async () => {
       try {
-        const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+        const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://api.bodam.website';
         const response = await fetch(`${apiBaseUrl}/donations/recent?limit=5`);
         if (!response.ok) {
           throw new Error('최근 기부 내역 조회 실패');

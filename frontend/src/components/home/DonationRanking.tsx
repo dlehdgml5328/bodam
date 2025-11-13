@@ -24,7 +24,7 @@ export default function DonationRanking() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+    const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.bodam.website';
     fetch(`${apiBaseUrl}/rankings?limit=10`)
       .then((res) => res.json())
       .then((data: RankingsData) => {

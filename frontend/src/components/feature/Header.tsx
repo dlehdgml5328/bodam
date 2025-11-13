@@ -401,7 +401,7 @@ export default function Header() {
   };
 
   const downloadReceipt = (donationId: string) => {
-    const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+    const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://api.bodam.website';
     window.open(`${apiBaseUrl}/donations/${donationId}/receipt`, '_blank');
   };
 

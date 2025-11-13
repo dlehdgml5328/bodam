@@ -19,7 +19,7 @@ export default function DashboardStats() {
 
   useEffect(() => {
     // API에서 통계 데이터 가져오기
-    const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+    const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.bodam.website';
     fetch(`${apiBaseUrl}/stats`)
       .then((res) => res.json())
       .then((data: StatsData) => {

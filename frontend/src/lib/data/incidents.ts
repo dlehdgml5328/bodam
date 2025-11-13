@@ -21,7 +21,7 @@ export type FireIncident = {
 
 export const getFireIncidents = cache(async (limit: number = 20): Promise<FireIncident[]> => {
   // 서버 사이드에서는 API_BASE_URL, 클라이언트에서는 NEXT_PUBLIC_API_BASE_URL 사용
-  const apiBaseUrl = process.env.API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+  const apiBaseUrl = process.env.API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL || 'http://api.bodam.website';
 
   try {
     const response = await fetch(`${apiBaseUrl}/api/incidents/?limit=${limit}`, {
@@ -45,7 +45,7 @@ export const getFireIncidents = cache(async (limit: number = 20): Promise<FireIn
 
 export const getActiveIncidents = cache(async (): Promise<FireIncident[]> => {
   // 서버 사이드에서는 API_BASE_URL, 클라이언트에서는 NEXT_PUBLIC_API_BASE_URL 사용
-  const apiBaseUrl = process.env.API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+  const apiBaseUrl = process.env.API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL || 'http://api.bodam.website';
 
   try {
     // 출동 중(dispatching)과 진압 중(suppressing) 사고를 각각 가져와서 합치기

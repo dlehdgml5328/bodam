@@ -53,7 +53,7 @@ export default function PaymentSuccessPage() {
       console.log('결제 승인 요청:', { paymentKey, orderId, amount });
 
       // 백엔드 API 호출하여 결제 승인
-      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://api.bodam.website';
       const response = await fetch(`${apiBaseUrl}/payments/confirm`, {
         method: 'POST',
         headers: {

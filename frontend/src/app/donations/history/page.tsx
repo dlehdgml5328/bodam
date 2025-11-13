@@ -324,7 +324,7 @@ export default function DonationHistoryPage() {
                       {donation.needs_receipt && (
                         <button
                           onClick={() => {
-                            const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+                            const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://api.bodam.website';
                             window.open(`${apiBaseUrl}/donations/${donation.id}/receipt`, '_blank');
                           }}
                           className="text-sm text-blue-600 hover:underline"
