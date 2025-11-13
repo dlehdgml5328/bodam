@@ -24,7 +24,8 @@ export default function DonationRanking() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('http://localhost:8000/rankings?limit=10')
+    const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+    fetch(`${apiBaseUrl}/rankings?limit=10`)
       .then((res) => res.json())
       .then((data: RankingsData) => {
         setRankings(data);

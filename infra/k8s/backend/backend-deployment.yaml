@@ -75,6 +75,13 @@ spec:
         - name: ENVIRONMENT
           value: "staging"
 
+        # CORS 설정
+        - name: ALLOWED_ORIGINS
+          valueFrom:
+            secretKeyRef:
+              name: bodam-secrets
+              key: allowed-origins
+
         # 리소스 제한 (2vCPU/4GB 노드 기준 최적화)
         resources:
           requests:
