@@ -100,7 +100,7 @@ jobs:
         run: npm run build
         env:
           NODE_ENV: production
-          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_API_BASE_URL: https://api.bodam.website
 
       - name: 빌드 아티팩트 검증
         working-directory: ./frontend
@@ -132,7 +132,7 @@ jobs:
         working-directory: ./frontend
         run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
         env:
-          NEXT_PUBLIC_API_URL: ${{ secrets.PREVIEW_API_URL }}
+          NEXT_PUBLIC_API_BASE_URL: https://api.bodam.website
 
       - name: Vercel 배포 (Preview)
         id: deploy
@@ -194,7 +194,7 @@ jobs:
         working-directory: ./frontend
         run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
         env:
-          NEXT_PUBLIC_API_URL: ${{ secrets.PRODUCTION_API_URL }}
+          NEXT_PUBLIC_API_BASE_URL: https://api.bodam.website
 
       - name: Vercel 배포 (Production)
         id: deploy
