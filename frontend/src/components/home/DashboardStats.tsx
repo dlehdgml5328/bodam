@@ -19,7 +19,8 @@ export default function DashboardStats() {
 
   useEffect(() => {
     // API에서 통계 데이터 가져오기
-    fetch('http://localhost:8000/stats')
+    const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+    fetch(`${apiBaseUrl}/stats`)
       .then((res) => res.json())
       .then((data: StatsData) => {
         setStatsData(data);
