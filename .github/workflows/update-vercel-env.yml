@@ -1,0 +1,36 @@
+name: Update Vercel Environment Variables
+
+on:
+  workflow_dispatch:
+
+jobs:
+  update-env:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update Vercel Environment Variables
+        run: |
+          # API Base URL 설정
+          curl -X POST "https://api.vercel.com/v10/projects/${{ secrets.VERCEL_PROJECT_ID }}/env" \
+            -H "Authorization: Bearer ${{ secrets.VERCEL_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "key": "NEXT_PUBLIC_API_BASE_URL",
+              "value": "https://api.bodam.website",
+              "type": "encrypted",
+              "target": ["production", "preview"]
+            }'
+
+          echo "✅ 환경변수 업데이트 완료!"
+
+      - name: Trigger Vercel Redeploy
+        run: |
+          curl -X POST "https://api.vercel.com/v13/deployments" \
+            -H "Authorization: Bearer ${{ secrets.VERCEL_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "name": "frontend",
+              "project": "${{ secrets.VERCEL_PROJECT_ID }}",
+              "target": "production"
+            }'
+
+          echo "✅ 재배포 트리거 완료!"
