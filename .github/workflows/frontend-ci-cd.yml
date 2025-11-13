@@ -190,11 +190,15 @@ jobs:
         working-directory: ./frontend
         run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
 
+      - name: 환경변수 파일 생성
+        working-directory: ./frontend
+        run: |
+          echo "NEXT_PUBLIC_API_BASE_URL=https://api.bodam.website" > .env.production
+          cat .env.production
+
       - name: Vercel 빌드 (Production)
         working-directory: ./frontend
         run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
-        env:
-          NEXT_PUBLIC_API_BASE_URL: https://api.bodam.website
 
       - name: Vercel 배포 (Production)
         id: deploy
