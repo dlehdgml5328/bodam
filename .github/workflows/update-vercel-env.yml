@@ -7,32 +7,43 @@ jobs:
   update-env:
     runs-on: ubuntu-latest
     steps:
-      - name: Update Vercel Environment Variables
+      - name: Get existing env var ID
+        id: get-env
         run: |
-          # API Base URL 설정
-          curl -X POST "https://api.vercel.com/v10/projects/${{ secrets.VERCEL_PROJECT_ID }}/env" \
+          ENV_ID=$(curl -s "https://api.vercel.com/v9/projects/${{ secrets.VERCEL_PROJECT_ID }}/env" \
+            -H "Authorization: Bearer ${{ secrets.VERCEL_TOKEN }}" | \
+            jq -r '.envs[] | select(.key=="NEXT_PUBLIC_API_BASE_URL") | .id' | head -1)
+          echo "env_id=$ENV_ID" >> $GITHUB_OUTPUT
+          echo "Found env var ID: $ENV_ID"
+
+      - name: Update Vercel Environment Variable
+        run: |
+          # 기존 환경변수 업데이트 (production, preview, development 모두)
+          curl -X PATCH "https://api.vercel.com/v9/projects/${{ secrets.VERCEL_PROJECT_ID }}/env/${{ steps.get-env.outputs.env_id }}" \
             -H "Authorization: Bearer ${{ secrets.VERCEL_TOKEN }}" \
             -H "Content-Type: application/json" \
             -d '{
-              "key": "NEXT_PUBLIC_API_BASE_URL",
               "value": "https://api.bodam.website",
-              "type": "encrypted",
-              "target": ["production", "preview"]
+              "target": ["production", "preview", "development"]
             }'
 
           echo "✅ 환경변수 업데이트 완료!"
 
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Trigger Vercel Redeploy via Git
+      - name: Trigger Vercel Redeploy
         run: |
-          # Git commit으로 Vercel 자동 재배포 트리거
-          git config --global user.email "actions@github.com"
-          git config --global user.name "GitHub Actions"
-
-          # 빈 커밋으로 재배포 트리거
-          git commit --allow-empty -m "chore: trigger Vercel redeploy with updated env vars"
-          git push origin donghee
+          # Vercel Deploy Hook으로 재배포 트리거
+          curl -X POST "https://api.vercel.com/v13/deployments" \
+            -H "Authorization: Bearer ${{ secrets.VERCEL_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "name": "frontend",
+              "gitSource": {
+                "type": "github",
+                "org": "dlehdgml5328",
+                "repo": "bodam",
+                "ref": "donghee"
+              },
+              "target": "production"
+            }'
 
           echo "✅ 재배포 트리거 완료!"
