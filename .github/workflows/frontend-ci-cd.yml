@@ -204,9 +204,15 @@ jobs:
         id: deploy
         working-directory: ./frontend
         run: |
-          url=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }})
+          # --prod 플래그로 Production 배포 강제
+          url=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }} 2>&1 || echo "deployment-failed")
+          if [ "$url" = "deployment-failed" ]; then
+            echo "❌ Deployment failed"
+            exit 1
+          fi
           echo "production_url=$url" >> $GITHUB_OUTPUT
           echo "✅ Production deployed to: $url"
+          echo "🔗 Main domain: https://bodam.vercel.app"
 
       - name: Lighthouse CI 실행
         uses: treosh/lighthouse-ci-action@v10
