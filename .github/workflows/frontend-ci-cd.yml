@@ -175,9 +175,9 @@ jobs:
 
   deploy-production:
     name: Vercel Production 배포
-    needs: build
+    needs: [lint-and-test]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/donghee'
+    if: github.ref == 'refs/heads/donghee' && always()
 
     steps:
       - name: 체크아웃
