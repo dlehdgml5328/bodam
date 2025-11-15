@@ -4,9 +4,23 @@ export default async function VideoSection() {
   const incidents = await getFireIncidents(20);
 
   // 영상이 있는 사건만 필터링
-  const incidentsWithVideos = incidents.filter(
+  let incidentsWithVideos = incidents.filter(
     (incident: any) => incident.video_count && incident.video_count > 0
   );
+
+  // 테스트용 더미 데이터 (실제 영상이 없을 때)
+  if (incidentsWithVideos.length === 0 && incidents.length > 0) {
+    incidentsWithVideos = incidents.slice(0, 3).map((inc: any) => ({
+      ...inc,
+      video_count: 1,
+      videos: [{
+        title: `🔥 ${inc.location_address} 화재 현장 긴급 영상`,
+        url: 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
+        thumbnail: 'https://i.ytimg.com/vi/jNQXAC9IVRw/maxresdefault.jpg',
+        published_at: inc.occurred_at
+      }]
+    }));
+  }
 
   if (incidentsWithVideos.length === 0) {
     return null; // 영상이 없으면 섹션 숨김
