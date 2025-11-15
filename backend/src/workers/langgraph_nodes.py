@@ -145,10 +145,7 @@ async def search_videos_node(state: MatcherState) -> MatcherState:
         return state
 
     severity = incident.get('severity', 'low')
-    if severity not in ('medium', 'high'):
-        logger.info("[Node] Severity=%s, skipping video search", severity)
-        state["video_results"] = []
-        return state
+    logger.info("[Node] Searching videos for incident (severity=%s)", severity)
 
     occurrence_date = incident.get('occurrenceDate', '')
     if occurrence_date:
