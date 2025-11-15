@@ -50,25 +50,21 @@ export default function DonationHistoryPage() {
 
   useEffect(() => {
     const fetchDonations = async () => {
-      const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
-      if (!isLoggedIn) {
+      // localStorage에서 사용자 이메일 가져오기
+      const userEmail = localStorage.getItem('loggedInEmail') || localStorage.getItem('userEmail');
+
+      if (!userEmail) {
+        // 이메일이 없으면 로그인 페이지로
         router.push('/login?redirect=/donations/history');
         return;
       }
 
       try {
-        // 서버에서 사용자 정보 가져오기
-        const userData = await apiRequest<{
-          id: string;
-          email: string;
-          name: string;
-        }>('/auth/me');
+        console.log('📧 사용자 이메일:', userEmail);
 
-        console.log('✅ 사용자 정보:', userData);
-
-        // 기부 내역 조회
+        // 기부 내역 조회 (이메일로 직접 조회)
         const data = await apiRequest<{ donations: Donation[]; total: number }>(
-          `/donations?donor_email=${encodeURIComponent(userData.email)}&limit=50`
+          `/donations?donor_email=${encodeURIComponent(userEmail)}&limit=50`
         );
 
         console.log('✅ 기부 내역:', data.donations.length, '개');
@@ -77,13 +73,7 @@ export default function DonationHistoryPage() {
       } catch (err: any) {
         console.error('❌ 기부 내역 조회 실패:', err);
         if (err instanceof ApiError) {
-          if (err.message.includes('NOT_AUTHENTICATED') || err.message.includes('401')) {
-            // 인증 실패 시 로그인 페이지로
-            localStorage.removeItem('isLoggedIn');
-            router.push('/login?redirect=/donations/history');
-          } else {
-            setError(err.message);
-          }
+          setError(err.message);
         } else {
           setError('기부 내역을 불러오는 중 오류가 발생했습니다.');
         }

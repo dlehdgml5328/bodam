@@ -110,9 +110,9 @@ spec:
 
         # CORS & Cookies
         - name: ALLOWED_ORIGINS
-          value: "https://bodam.com,https://preview.bodam.com"
+          value: "https://bodam.com,https://preview.bodam.com,https://bodam.vercel.app,https://api.bodam.website"
         - name: COOKIE_DOMAIN
-          value: ".bodam.com"
+          value: ""
         - name: COOKIE_SECURE
           value: "true"
         - name: COOKIE_SAMESITE
