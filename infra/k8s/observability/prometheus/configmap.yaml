@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: observability
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+      external_labels:
+        cluster: 'bodam-prod'
+        environment: 'production'
+
+    scrape_configs:
+      # Backend API metrics
+      - job_name: 'backend-api'
+        scrape_interval: 15s
+        static_configs:
+          - targets: ['bodam-backend-service.bodam-prod.svc.cluster.local:80']
+        metrics_path: '/metrics'
+        relabel_configs:
+          - source_labels: [__address__]
+            target_label: instance
+          - source_labels: [__address__]
+            target_label: service
+            replacement: 'backend-api'
+
+      # Prometheus self-monitoring
+      - job_name: 'prometheus'
+        scrape_interval: 60s
+        static_configs:
+          - targets: ['localhost:9090']

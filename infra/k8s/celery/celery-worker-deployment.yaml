@@ -3,12 +3,13 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: celery-worker
+  namespace: bodam-prod
   labels:
     app: celery-worker
     component: worker
     queue: main
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: celery-worker
@@ -22,7 +23,7 @@ spec:
     spec:
       containers:
       - name: celery-worker
-        image: registry.digitalocean.com/bodam/backend:latest
+        image: registry.digitalocean.com/bodam/backend:production-5d505c11532acde6541c60708953a2b570bc19b3
         imagePullPolicy: Always
         command:
         - celery
@@ -30,8 +31,8 @@ spec:
         - src.worker.celery_app
         - worker
         - --loglevel=info
-        - --queues=celery,critical
-        - --concurrency=4
+        - --queues=celery,critical,news_matching
+        - --concurrency=1
         - --max-tasks-per-child=100
         env:
         # Database
@@ -90,11 +91,11 @@ spec:
 
         resources:
           requests:
-            memory: "512Mi"
-            cpu: "250m"
-          limits:
             memory: "1Gi"
             cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
 
         livenessProbe:
           exec:
@@ -104,10 +105,10 @@ spec:
             - src.worker.celery_app
             - inspect
             - ping
-          initialDelaySeconds: 60
-          periodSeconds: 30
-          timeoutSeconds: 10
-          failureThreshold: 3
+          initialDelaySeconds: 180
+          periodSeconds: 120
+          timeoutSeconds: 60
+          failureThreshold: 10
 
       imagePullSecrets:
       - name: regcred
