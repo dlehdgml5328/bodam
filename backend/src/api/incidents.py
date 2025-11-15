@@ -4,11 +4,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from datetime import datetime
 
 from src.database.connection import get_session
-from src.models.fire_incident import FireIncident
+from src.models.fire_incident import FireIncident, IncidentNewsMatch, IncidentVideoMatch
 
 router = APIRouter(prefix="/api/incidents", tags=["incidents"])
 
@@ -30,7 +31,14 @@ async def get_incidents(
         status: 상태 필터 (dispatching, suppressing, contained, resolved)
         severity: 심각도 필터 (critical, high, medium, low)
     """
-    query = select(FireIncident).order_by(desc(FireIncident.occurred_at))
+    query = (
+        select(FireIncident)
+        .options(
+            selectinload(FireIncident.news_matches),
+            selectinload(FireIncident.video_matches)
+        )
+        .order_by(desc(FireIncident.occurred_at))
+    )
 
     # 필터 적용
     if status:
@@ -60,6 +68,17 @@ async def get_incidents(
             "source_url": incident.source_url,
             "created_at": incident.created_at.isoformat() if incident.created_at else None,
             "updated_at": incident.updated_at.isoformat() if incident.updated_at else None,
+            "news_count": len(incident.news_matches) if incident.news_matches else 0,
+            "video_count": len(incident.video_matches) if incident.video_matches else 0,
+            "videos": [
+                {
+                    "title": match.video_title,
+                    "url": match.video_url,
+                    "thumbnail": match.thumbnail_url,
+                    "published_at": match.published_at.isoformat() if match.published_at else None
+                }
+                for match in (incident.video_matches or [])
+            ][:3]  # 최대 3개만
         }
         for incident in incidents
     ]
