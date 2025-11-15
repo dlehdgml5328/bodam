@@ -33,6 +33,8 @@ spec:
         - "0.0.0.0"
         - --port
         - "8080"
+        - --workers
+        - "1"
 
         env:
         # 데이터베이스 설정
@@ -82,30 +84,42 @@ spec:
               name: bodam-secrets
               key: allowed-origins
 
-        # 리소스 제한 (2vCPU/4GB 노드 기준 최적화)
+        # Toss Payments 설정
+        - name: TOSS_CLIENT_KEY
+          valueFrom:
+            secretKeyRef:
+              name: toss-secrets
+              key: client-key
+        - name: TOSS_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: toss-secrets
+              key: secret-key
+
+        # 리소스 제한 (메모리 부족 환경 최적화)
         resources:
           requests:
-            memory: "256Mi"  # 최소 메모리 요청
-            cpu: "200m"      # 0.2 CPU (최소 요청)
+            memory: "128Mi"  # 최소 메모리 요청
+            cpu: "100m"      # 0.1 CPU (최소 요청)
           limits:
-            memory: "512Mi"  # 최대 메모리 (OOM 방지)
-            cpu: "500m"      # 0.5 CPU (최대 사용)
+            memory: "256Mi"  # 최대 메모리 (OOM 방지)
+            cpu: "300m"      # 0.3 CPU (최대 사용)
         
         # Health Check
         livenessProbe:
           httpGet:
-            path: /health
+            path: /healthz
             port: 8080
-          initialDelaySeconds: 30
+          initialDelaySeconds: 60
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
-        
+
         readinessProbe:
           httpGet:
-            path: /ready
+            path: /readyz
             port: 8080
-          initialDelaySeconds: 10
+          initialDelaySeconds: 20
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 2
@@ -121,7 +135,7 @@ spec:
         - src.workers.celery_app
         - worker
         - --loglevel=info
-        - --concurrency=4
+        - --concurrency=1
         - --max-tasks-per-child=100
 
         env:
@@ -152,14 +166,14 @@ spec:
         - name: LOG_FORMAT
           value: "json"
 
-        # 리소스 제한 (2vCPU/4GB 노드 기준 최적화)
+        # 리소스 제한 (메모리 부족 환경 최적화)
         resources:
           requests:
-            memory: "256Mi"  # 최소 메모리 요청
-            cpu: "200m"      # 0.2 CPU (최소 요청)
+            memory: "128Mi"  # 최소 메모리 요청
+            cpu: "100m"      # 0.1 CPU (최소 요청)
           limits:
-            memory: "512Mi"  # 최대 메모리 (OOM 방지)
-            cpu: "500m"      # 0.5 CPU (최대 사용)
+            memory: "256Mi"  # 최대 메모리 (OOM 방지)
+            cpu: "300m"      # 0.3 CPU (최대 사용)
         
         # Health Check (Celery 상태 확인)
         livenessProbe:
