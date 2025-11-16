@@ -267,7 +267,7 @@ async def _get_video_payload(limit: int) -> list[VideoNewsResponse]:
                 select(NewsMatch, FireIncident)
                 .join(FireIncident, NewsMatch.incident_id == FireIncident.id)
                 .where(NewsMatch.news_type == "video")
-                .order_by(desc(NewsMatch.matched_at))
+                .order_by(desc(NewsMatch.created_at))
                 .limit(limit * 2)  # 필터링 후 충분한 개수를 위해 더 많이 가져옴
             )
 
@@ -304,7 +304,7 @@ async def _get_video_payload(limit: int) -> list[VideoNewsResponse]:
                     thumbnail = news_match.thumbnail_url or f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"
 
                     # 시간 포맷
-                    published_at = news_match.published_at or news_match.matched_at
+                    published_at = news_match.published_at or news_match.created_at
                     time_str = _format_datetime_obj(published_at) if published_at else ""
 
                     video_list.append(VideoNewsResponse(
@@ -375,7 +375,7 @@ async def _get_breaking_payload(limit: int) -> list[BreakingNewsResponse]:
                     title = html.unescape(news_match.title)
 
                     # 시간 포맷
-                    published_at = news_match.published_at or news_match.matched_at
+                    published_at = news_match.published_at or news_match.created_at
                     time_str = _format_datetime_obj(published_at) if published_at else ""
 
                     # 최근 1시간 이내면 속보
