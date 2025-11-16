@@ -7,7 +7,7 @@ metadata:
     app: bodam-backend
     tier: backend
 spec:
-  replicas: 1  # 단일 Pod
+  replicas: 3  # 3개 Pod으로 확장
   selector:
     matchLabels:
       app: bodam-backend
@@ -55,11 +55,8 @@ spec:
           value: "redis://redis-service:6379/0"
 
         # JWT 설정
-        - name: JWT_SECRET_KEY
-          valueFrom:
-            secretKeyRef:
-              name: bodam-secrets
-              key: jwt-secret
+        - name: JWT_SECRET
+          value: "bodam-preview-jwt-secret-key-change-in-production-2024-very-long-secret-key-for-hmac-algorithm"
 
         # API 설정
         - name: API_HOST
@@ -79,22 +76,21 @@ spec:
 
         # CORS 설정
         - name: ALLOWED_ORIGINS
-          valueFrom:
-            secretKeyRef:
-              name: bodam-secrets
-              key: allowed-origins
+          value: "https://bodam.website,https://www.bodam.website,https://bodam.vercel.app,https://api.bodam.website"
 
         # Toss Payments 설정
         - name: TOSS_CLIENT_KEY
           valueFrom:
             secretKeyRef:
-              name: toss-secrets
-              key: client-key
+              name: bodam-secrets
+              key: toss-client-key
+              optional: true
         - name: TOSS_SECRET_KEY
           valueFrom:
             secretKeyRef:
-              name: toss-secrets
-              key: secret-key
+              name: bodam-secrets
+              key: toss-secret-key
+              optional: true
 
         # 리소스 제한 (메모리 부족 환경 최적화)
         resources:
@@ -123,71 +119,6 @@ spec:
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 2
-      
-      # 컨테이너 2: Celery Worker (모든 워커 역할 통합)
-      - name: celery-worker
-        image: registry.digitalocean.com/bodam/backend:latest
-        imagePullPolicy: Always
-
-        command:
-        - celery
-        - -A
-        - src.workers.celery_app
-        - worker
-        - --loglevel=info
-        - --concurrency=1
-        - --max-tasks-per-child=100
-
-        env:
-        # 데이터베이스 설정
-        - name: DATABASE_URL
-          valueFrom:
-            secretKeyRef:
-              name: bodam-secrets
-              key: database-url
-
-        # Celery 설정
-        - name: CELERY_BROKER_URL
-          value: "redis://redis-service:6379/0"
-        - name: CELERY_RESULT_BACKEND
-          value: "redis://redis-service:6379/0"
-
-        # Selenium 설정
-        - name: SELENIUM_HEADLESS
-          value: "true"
-        - name: SELENIUM_DRIVER_POOL_SIZE
-          value: "10"
-        - name: SELENIUM_DEFAULT_TIMEOUT
-          value: "30"
-
-        # 로그 설정
-        - name: LOG_LEVEL
-          value: "INFO"
-        - name: LOG_FORMAT
-          value: "json"
-
-        # 리소스 제한 (메모리 부족 환경 최적화)
-        resources:
-          requests:
-            memory: "128Mi"  # 최소 메모리 요청
-            cpu: "100m"      # 0.1 CPU (최소 요청)
-          limits:
-            memory: "256Mi"  # 최대 메모리 (OOM 방지)
-            cpu: "300m"      # 0.3 CPU (최대 사용)
-        
-        # Health Check (Celery 상태 확인)
-        livenessProbe:
-          exec:
-            command:
-            - celery
-            - -A
-            - src.workers.celery_app
-            - inspect
-            - ping
-          initialDelaySeconds: 60
-          periodSeconds: 30
-          timeoutSeconds: 10
-          failureThreshold: 3
 
 ---
 # 백엔드 Service

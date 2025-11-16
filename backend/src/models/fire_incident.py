@@ -47,6 +47,7 @@ class FireIncident(Base):
     # Relationships
     dispatch_events = relationship("DispatchEvent", back_populates="incident", cascade="all, delete-orphan")
     news_matches = relationship("NewsMatch", back_populates="incident", cascade="all, delete-orphan")
+    video_matches = relationship("IncidentVideoMatch", back_populates="incident", cascade="all, delete-orphan", foreign_keys="[IncidentVideoMatch.incident_id]")
 
     def __repr__(self) -> str:
         return f"<FireIncident(id={self.id}, title={self.title}, status={self.status})>"

@@ -9,7 +9,7 @@ from typing import List, Optional
 from datetime import datetime
 
 from src.database.connection import get_session
-from src.models.fire_incident import FireIncident, IncidentNewsMatch, IncidentVideoMatch
+from src.models.fire_incident import FireIncident
 
 router = APIRouter(prefix="/api/incidents", tags=["incidents"])
 

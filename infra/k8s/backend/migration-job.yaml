@@ -1,0 +1,95 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: backend-migration
+  labels:
+    app: bodam
+    component: migration
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app: bodam
+        component: migration
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: migration
+        image: python:3.11-slim
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          apt-get update && apt-get install -y postgresql-client
+
+          # PostgreSQL에 연결해서 테이블 생성
+          PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -U $DB_USER -d $DB_NAME <<'EOF'
+
+          -- fire_incidents 테이블
+          CREATE TABLE IF NOT EXISTS fire_incidents (
+            id VARCHAR(50) PRIMARY KEY,
+            title VARCHAR(500) NOT NULL,
+            location_address TEXT NOT NULL,
+            latitude FLOAT,
+            longitude FLOAT,
+            occurred_at TIMESTAMP WITH TIME ZONE NOT NULL,
+            status VARCHAR(50) NOT NULL,
+            severity VARCHAR(20),
+            casualties_injured INTEGER DEFAULT 0,
+            casualties_dead INTEGER DEFAULT 0,
+            estimated_damage BIGINT,
+            source_url TEXT,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+          );
+
+          CREATE INDEX IF NOT EXISTS idx_fire_incidents_occurred_at ON fire_incidents(occurred_at DESC);
+          CREATE INDEX IF NOT EXISTS idx_fire_incidents_status ON fire_incidents(status);
+
+          -- incident_video_matches 테이블
+          CREATE TABLE IF NOT EXISTS incident_video_matches (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            incident_id VARCHAR(255) NOT NULL REFERENCES fire_incidents(id) ON DELETE CASCADE,
+            video_url TEXT NOT NULL,
+            video_title TEXT NOT NULL,
+            thumbnail_url TEXT,
+            published_at TIMESTAMP WITH TIME ZONE,
+            relevance_score FLOAT,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            UNIQUE(incident_id, video_url)
+          );
+
+          CREATE INDEX IF NOT EXISTS idx_video_incident ON incident_video_matches(incident_id);
+
+          -- news_matches 테이블
+          CREATE TABLE IF NOT EXISTS news_matches (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            incident_id VARCHAR(255) NOT NULL REFERENCES fire_incidents(id) ON DELETE CASCADE,
+            news_type VARCHAR(50) NOT NULL,
+            news_id TEXT NOT NULL,
+            title TEXT NOT NULL,
+            url TEXT NOT NULL,
+            published_at TIMESTAMP WITH TIME ZONE,
+            thumbnail_url TEXT,
+            similarity_score FLOAT,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            UNIQUE(incident_id, news_type, news_id)
+          );
+
+          CREATE INDEX IF NOT EXISTS idx_news_incident ON news_matches(incident_id);
+
+          EOF
+
+          echo "Migration completed successfully!"
+
+        env:
+        - name: DB_HOST
+          value: "postgres-service"
+        - name: DB_USER
+          value: "bodam"
+        - name: DB_PASSWORD
+          value: "bodampreview123"
+        - name: DB_NAME
+          value: "bodam"

@@ -27,6 +27,7 @@ from .news_match import NewsMatch
 from .selenium_crawl_job import SeleniumCrawlJob
 from .knowledge_document import KnowledgeDocument
 from .refund import Refund
+from .incident_video_match import IncidentVideoMatch
 
 __all__ = [
     "Base",
@@ -55,4 +56,5 @@ __all__ = [
     "SeleniumCrawlJob",
     "KnowledgeDocument",
     "Refund",
+    "IncidentVideoMatch",
 ]
