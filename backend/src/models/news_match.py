@@ -31,7 +31,6 @@ class NewsMatch(Base):
     published_at = Column(DateTime(timezone=True), nullable=True)
     thumbnail_url = Column(Text, nullable=True)
     similarity_score = Column(Float, nullable=True)  # 유사도 점수 (0.0 ~ 1.0)
-    matched_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
     # Relationships
@@ -56,7 +55,6 @@ class NewsMatch(Base):
             "published_at": self.published_at.isoformat() if self.published_at else None,
             "thumbnail_url": self.thumbnail_url,
             "similarity_score": self.similarity_score,
-            "matched_at": self.matched_at.isoformat() if self.matched_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 

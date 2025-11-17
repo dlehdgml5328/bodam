@@ -3,7 +3,6 @@ import DashboardStats from '@/components/home/DashboardStats';
 import DonationRanking from '@/components/home/DonationRanking';
 import FirefighterMessages from '@/components/home/FirefighterMessages';
 import NewsSection from '@/components/home/NewsSection';
-import VideoSection from '@/components/home/VideoSection';
 import EmergencyStatus from '@/components/home/EmergencyStatus';
 import DonateSection from '@/components/home/DonateSection';
 import { getActiveIncidents } from '@/lib/data/incidents';
@@ -45,7 +44,6 @@ export default async function HomePage() {
       <DonationRanking />
       <FirefighterMessages />
       <NewsSection />
-      <VideoSection />
       <EmergencyStatus stations={emergencyStations} />
       <DonateSection />
     </>

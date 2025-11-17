@@ -176,10 +176,9 @@ async def search_videos_node(state: MatcherState) -> MatcherState:
         logger.info(f"[Node] Searching videos published after: {search_start} (7 days range)")
 
         video_results = youtube_client.search(
-            query=f"{primary_keyword} 화재",
-            max_results=2,
+            query=f"{primary_keyword} 화재 현장",
+            max_results=5,
             order="relevance",
-            video_duration="short",
             published_after=search_start
         )
 
@@ -256,23 +255,20 @@ async def evaluate_relevance_node(state: MatcherState) -> MatcherState:
                 result["relevance_reason"] = item["reason"]
                 evaluated_videos.append(result)
 
-        # 각 타입별로 최고 점수 1개만 선택
-        best_news = max(evaluated_news, key=lambda x: x.get("relevance_score", 0)) if evaluated_news else None
-        best_video = max(evaluated_videos, key=lambda x: x.get("relevance_score", 0)) if evaluated_videos else None
-
-        final_news = [best_news] if best_news else []
-        final_videos = [best_video] if best_video else []
+        # 점수 0.7 이상인 항목만 선택 (최대 3개)
+        final_news = [n for n in evaluated_news if n.get("relevance_score", 0) >= 0.7][:3]
+        final_videos = [v for v in evaluated_videos if v.get("relevance_score", 0) >= 0.7][:3]
 
         # 점수 상세 로그
-        if best_news:
-            logger.info(f"[Node] Best news: score={best_news.get('relevance_score'):.2f}, title={best_news.get('title', '')[:50]}")
-        if best_video:
-            logger.info(f"[Node] Best video: score={best_video.get('relevance_score'):.2f}, title={best_video.get('title', '')[:50]}")
+        for i, news in enumerate(final_news, 1):
+            logger.info(f"[Node] Selected news #{i}: score={news.get('relevance_score'):.2f}, title={news.get('title', '')[:50]}")
+        for i, video in enumerate(final_videos, 1):
+            logger.info(f"[Node] Selected video #{i}: score={video.get('relevance_score'):.2f}, title={video.get('title', '')[:50]}")
 
         logger.info(
             f"[Node] Evaluation complete: "
             f"{len(evaluated_news)} news ({len(final_news)} selected), "
-            f"{len(evaluated_videos)} videos ({len(final_videos)} selected) (score >= 0.6)"
+            f"{len(evaluated_videos)} videos ({len(final_videos)} selected) (score >= 0.7)"
         )
 
         state["evaluated_news"] = final_news

@@ -326,7 +326,7 @@ class TogetherAIHttpClient(TogetherAIClient):
 }}}}
 ```
 
-**중요**: 점수가 0.6 이상인 항목만 포함하세요. JSON 형식만 출력하세요.
+**중요**: 점수가 0.7 이상인 항목만 포함하세요. 관련성이 높은 순서대로 정렬하세요. JSON 형식만 출력하세요.
 """
 
     async def close(self) -> None:

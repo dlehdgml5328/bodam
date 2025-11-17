@@ -253,6 +253,7 @@ def _map_breaking_record(record: BreakingNewsRecord) -> BreakingNewsResponse:
 
 async def _get_video_payload(limit: int) -> list[VideoNewsResponse]:
     # DB에서 영상만 가져오기 (실시간 주요 뉴스 섹션)
+    logger.warning(f"[NewsAPI] _get_video_payload called with limit={limit}")
     try:
         from sqlalchemy import select, desc
         from src.database.connection import get_session
@@ -273,6 +274,7 @@ async def _get_video_payload(limit: int) -> list[VideoNewsResponse]:
 
             result = await session.execute(query)
             rows = result.all()
+            logger.warning(f"[NewsAPI] Query returned {len(rows)} rows")
 
             if rows:
                 video_list = []
@@ -353,7 +355,7 @@ async def _get_breaking_payload(limit: int) -> list[BreakingNewsResponse]:
                 select(NewsMatch, FireIncident)
                 .join(FireIncident, NewsMatch.incident_id == FireIncident.id)
                 .where(NewsMatch.news_type == "news")
-                .order_by(desc(NewsMatch.matched_at))
+                .order_by(desc(NewsMatch.created_at))
                 .limit(limit)
             )
 
