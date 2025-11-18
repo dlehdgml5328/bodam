@@ -265,9 +265,10 @@ async def _get_video_payload(limit: int) -> list[VideoNewsResponse]:
         # 필터링할 키워드 (교육, 훈련 영상 제외)
         exclude_keywords = ["예담직업전문학교", "교육", "훈련", "체험", "안전테마파크"]
 
-        logger.warning(f"[NewsAPI] About to enter get_session loop")
-        async for session in get_session():
-            logger.warning(f"[NewsAPI] Inside get_session loop")
+        logger.warning(f"[NewsAPI] About to create session")
+        from src.database.connection import SessionLocal
+        async with SessionLocal() as session:
+            logger.warning(f"[NewsAPI] Session created")
             query = (
                 select(NewsMatch, FireIncident)
                 .join(FireIncident, NewsMatch.incident_id == FireIncident.id)
@@ -281,7 +282,6 @@ async def _get_video_payload(limit: int) -> list[VideoNewsResponse]:
             logger.warning(f"[NewsAPI] Query executed")
             rows = result.all()
             logger.warning(f"[NewsAPI] Query returned {len(rows)} rows")
-            logger.warning(f"[NewsAPI] Rows: {rows}")
 
             if rows:
                 video_list = []
@@ -335,21 +335,15 @@ async def _get_video_payload(limit: int) -> list[VideoNewsResponse]:
                     if len(video_list) >= limit:
                         break
 
-                logger.info(f"[NewsAPI] Loaded {len(video_list)} videos from news_matches table (filtered)")
-                return video_list
-            else:
-                # DB에 영상이 없으면 빈 배열 반환 (Mock 데이터 사용 안 함)
-                logger.info(f"[NewsAPI] No videos in DB, returning empty list")
-                return []
-            break
+            logger.info(f"[NewsAPI] Loaded {len(video_list)} videos from news_matches table (filtered)")
+            return video_list
     except Exception as e:
         import traceback
         logger.error(f"[NewsAPI] Failed to load from DB: {e}")
         logger.error(f"[NewsAPI] Traceback: {traceback.format_exc()}")
-
-    # DB 조회 실패 시에도 빈 배열 반환 (Fallback 없음)
-    logger.warning(f"[NewsAPI] Returning empty list (fallback)")
-    return []
+        # DB 조회 실패 시에도 빈 배열 반환 (Fallback 없음)
+        logger.warning(f"[NewsAPI] Returning empty list (fallback)")
+        return []
 
 
 async def _get_breaking_payload(limit: int) -> list[BreakingNewsResponse]:
