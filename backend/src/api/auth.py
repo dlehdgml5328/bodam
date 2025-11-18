@@ -47,8 +47,8 @@ class SignupRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8)
     name: str = Field(min_length=2)
-    phone: str = Field(pattern=r"^01[0-9]{8,9}$")
-    id_number: str = Field(pattern=r"^\d{6}-?\d{7}$")  # 123456-1234567 또는 1234561234567
+    phone: str | None = Field(default=None, pattern=r"^01[0-9]{8,9}$")
+    id_number: str | None = Field(default=None, pattern=r"^\d{6}-?\d{7}$")  # 123456-1234567 또는 1234561234567
 
 
 class SignupResponse(BaseModel):
