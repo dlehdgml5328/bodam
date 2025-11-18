@@ -2,6 +2,7 @@
 뉴스-사고 매칭 모델
 """
 from datetime import datetime
+import uuid
 from sqlalchemy import (
     Column,
     Integer,
@@ -13,6 +14,7 @@ from sqlalchemy import (
     Index,
     UniqueConstraint,
 )
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from .base import Base
 
@@ -22,7 +24,7 @@ class NewsMatch(Base):
 
     __tablename__ = "news_matches"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     incident_id = Column(String(50), ForeignKey("fire_incidents.id", ondelete="CASCADE"), nullable=False)
     news_type = Column(String(20), nullable=False)  # 'naver', 'youtube'
     news_id = Column(String(200), nullable=False)
