@@ -255,15 +255,19 @@ async def _get_video_payload(limit: int) -> list[VideoNewsResponse]:
     # DB에서 영상만 가져오기 (실시간 주요 뉴스 섹션)
     logger.warning(f"[NewsAPI] _get_video_payload called with limit={limit}")
     try:
+        logger.warning(f"[NewsAPI] Starting imports")
         from sqlalchemy import select, desc
         from src.database.connection import get_session
         from src.models.news_match import NewsMatch
         from src.models.fire_incident import FireIncident
+        logger.warning(f"[NewsAPI] Imports done")
 
         # 필터링할 키워드 (교육, 훈련 영상 제외)
         exclude_keywords = ["예담직업전문학교", "교육", "훈련", "체험", "안전테마파크"]
 
+        logger.warning(f"[NewsAPI] About to enter get_session loop")
         async for session in get_session():
+            logger.warning(f"[NewsAPI] Inside get_session loop")
             query = (
                 select(NewsMatch, FireIncident)
                 .join(FireIncident, NewsMatch.incident_id == FireIncident.id)
@@ -271,10 +275,13 @@ async def _get_video_payload(limit: int) -> list[VideoNewsResponse]:
                 .order_by(desc(NewsMatch.created_at))
                 .limit(limit * 2)  # 필터링 후 충분한 개수를 위해 더 많이 가져옴
             )
+            logger.warning(f"[NewsAPI] Query created")
 
             result = await session.execute(query)
+            logger.warning(f"[NewsAPI] Query executed")
             rows = result.all()
             logger.warning(f"[NewsAPI] Query returned {len(rows)} rows")
+            logger.warning(f"[NewsAPI] Rows: {rows}")
 
             if rows:
                 video_list = []
@@ -336,9 +343,12 @@ async def _get_video_payload(limit: int) -> list[VideoNewsResponse]:
                 return []
             break
     except Exception as e:
-        logger.warning(f"[NewsAPI] Failed to load from DB: {e}")
+        import traceback
+        logger.error(f"[NewsAPI] Failed to load from DB: {e}")
+        logger.error(f"[NewsAPI] Traceback: {traceback.format_exc()}")
 
     # DB 조회 실패 시에도 빈 배열 반환 (Fallback 없음)
+    logger.warning(f"[NewsAPI] Returning empty list (fallback)")
     return []
 
 
