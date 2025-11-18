@@ -343,6 +343,7 @@ async def _get_video_payload(limit: int) -> list[VideoNewsResponse]:
 
 
 async def _get_breaking_payload(limit: int) -> list[BreakingNewsResponse]:
+    logger.info(f"[NewsAPI] _get_breaking_payload called with limit={limit}")
     # 먼저 DB에서 실제 매칭된 뉴스 데이터 가져오기
     try:
         from sqlalchemy import select, desc
@@ -361,6 +362,7 @@ async def _get_breaking_payload(limit: int) -> list[BreakingNewsResponse]:
 
             result = await session.execute(query)
             rows = result.all()
+            logger.info(f"[NewsAPI] Query returned {len(rows)} rows")
 
             if rows:
                 news_list = []
