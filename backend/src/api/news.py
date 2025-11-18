@@ -267,6 +267,8 @@ async def _get_video_payload(limit: int) -> list[VideoNewsResponse]:
 
         logger.warning(f"[NewsAPI] About to create session")
         from src.database.connection import SessionLocal
+
+        video_list = []
         async with SessionLocal() as session:
             logger.warning(f"[NewsAPI] Session created")
             query = (
@@ -282,9 +284,11 @@ async def _get_video_payload(limit: int) -> list[VideoNewsResponse]:
             logger.warning(f"[NewsAPI] Query executed")
             rows = result.all()
             logger.warning(f"[NewsAPI] Query returned {len(rows)} rows")
+            logger.warning(f"[NewsAPI] Rows type: {type(rows)}")
+            if rows:
+                logger.warning(f"[NewsAPI] First row: {rows[0] if rows else None}")
 
             if rows:
-                video_list = []
                 seen_video_ids = set()  # 중복 제거를 위한 set
 
                 for idx, (news_match, incident) in enumerate(rows):

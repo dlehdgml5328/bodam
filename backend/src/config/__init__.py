@@ -79,12 +79,18 @@ class Settings(BaseSettings):
     # 로그 설정
     log_level: str = "INFO"
     log_format: str = "console"  # console 또는 json
-    
+
     # Sentry 설정 (선택사항)
     sentry_dsn: Optional[str] = None
-    
+
     # 환경 구분
     environment: str = "development"
+
+    # 외부 API 설정
+    youtube_api_key: Optional[str] = None
+    naver_client_id: Optional[str] = None
+    naver_client_secret: Optional[str] = None
+    together_api_key: Optional[str] = None
     
 
 
