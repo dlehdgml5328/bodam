@@ -92,6 +92,31 @@ spec:
               key: toss-secret-key
               optional: true
 
+        # External API Keys
+        - name: YOUTUBE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: bodam-secrets
+              key: youtube-api-key
+              optional: true
+        - name: NAVER_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: bodam-secrets
+              key: naver-client-id
+              optional: true
+        - name: NAVER_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: bodam-secrets
+              key: naver-client-secret
+              optional: true
+        - name: TOGETHER_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: bodam-secrets
+              key: together-api-key
+
         # 리소스 제한 (메모리 부족 환경 최적화)
         resources:
           requests:
