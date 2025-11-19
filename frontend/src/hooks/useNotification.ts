@@ -59,7 +59,7 @@ export function useNotification() {
         setFcmToken(token);
         setPermission('granted');
 
-        // 서버에 FCM 토큰 저장
+        // 서버에 FCM 토큰 저장 (로그인된 경우에만 저장됨)
         try {
           await apiRequest('/notifications/fcm-token', {
             method: 'POST',
@@ -67,7 +67,10 @@ export function useNotification() {
           });
           console.log('FCM token saved to server');
         } catch (error) {
-          console.error('Failed to save FCM token to server:', error);
+          // 401 에러는 로그인하지 않은 상태이므로 무시 (로그인 후 자동 저장)
+          if (error && typeof error === 'object' && 'status' in error && error.status !== 401) {
+            console.error('Failed to save FCM token to server:', error);
+          }
         }
       } else {
         setPermission('denied');
