@@ -120,6 +120,17 @@ spec:
           timeoutSeconds: 3
           failureThreshold: 2
 
+        volumeMounts:
+        - name: firebase-credentials
+          mountPath: /app/firebase-service-account.json
+          subPath: firebase-service-account.json
+          readOnly: true
+
+      volumes:
+      - name: firebase-credentials
+        secret:
+          secretName: firebase-credentials
+
 ---
 # 백엔드 Service
 apiVersion: v1
